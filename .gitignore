@@ -209,6 +209,10 @@ dashboard/dist/
 dashboard/coverage/
 dashboard/*.tsbuildinfo
 
+# Go CLI build artifacts and local toolchain caches
+cli/bin/
+cli/coverage.out
+
 # Ruff stuff:
 .ruff_cache/
 
