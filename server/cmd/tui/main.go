@@ -213,12 +213,11 @@ type wireMessage struct {
 }
 
 func startAppServer(ctx context.Context, events *eventQueue, slog *sessionLogger) (*appServer, error) {
-	bin, err := exec.LookPath("codex")
+	cmd, err := codexCommand(ctx, "app-server", "--listen", "stdio://")
 	if err != nil {
-		return nil, fmt.Errorf("codex not on PATH: %w", err)
+		return nil, err
 	}
 
-	cmd := exec.CommandContext(ctx, bin, "app-server", "--listen", "stdio://")
 	cmd.Stderr = io.Discard
 
 	stdin, err := cmd.StdinPipe()

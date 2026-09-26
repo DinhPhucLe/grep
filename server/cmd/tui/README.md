@@ -56,6 +56,12 @@ Use those schemas as the source of truth for methods, params, and item shapes wh
 
 ### Run the test TUI
 
+On Windows, install Codex with `npm.cmd install -g @openai/codex`.
+The TUI launches npm installations through `node.exe`, so PowerShell script
+execution policy does not affect it. It also checks `%APPDATA%\npm` when an
+existing terminal has not picked up npm's PATH entry. Node.js must be on PATH.
+Native Codex executables on PATH are used directly.
+
 Run these commands from `server/cmd` (or use `go run ./cmd/tui` from `server`):
 
 ```bash
