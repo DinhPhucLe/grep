@@ -2,64 +2,51 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log"
 	"net/http"
 	"os"
 
+	"cortisol-server/internal/db"
 	"cortisol-server/internal/health"
 	"cortisol-server/internal/jobs"
 
 	"github.com/joho/godotenv"
-	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
-	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 )
 
 func main() {
+	// REPORT ERRORS AFTER RUN HAS RELEASED ITS DATABASE CONNECTION
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	// LOAD ENVIRONMENT VARIABLES FROM .ENV FILE
 	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 
 	// SET UP MONGODB CLIENT OPTIONS
-	uri := os.Getenv("MONGODB_URI")
-	if uri == "" {
-		log.Fatal("MONGODB_URI is required")
-	}
-
-	opts := options.Client().ApplyURI(
-		fmt.Sprintf(
-			uri,
-			os.Getenv("DB_USERNAME"),
-			os.Getenv("DB_PASSWORD"),
-		),
-	)
-
-	client, err := mongo.Connect(opts)
+	config, err := db.ConfigFromEnv()
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	// CREATE DATABASE INSTANCE
-	databaseName := os.Getenv("MONGODB_DATABASE")
-	if databaseName == "" {
-		log.Fatal("MONGODB_DATABASE is required")
+	// CONNECT, PING, AND SELECT THE APPLICATION DATABASE
+	database, err := db.Connect(context.Background(), config)
+	if err != nil {
+		return err
 	}
-	// db := client.Database(databaseName)
 
+	// RELEASE THE CLIENT WHEN RUN RETURNS
 	defer func() {
-		if err = client.Disconnect(context.TODO()); err != nil {
-			panic(err)
+		if err := db.Disconnect(database); err != nil {
+			log.Printf("MongoDB disconnect failed: %v", err)
 		}
 	}()
-
-	// Send a ping to confirm a successful connection
-	if err := client.Ping(context.TODO(), readpref.Primary()); err != nil {
-		panic(err)
-	}
-	fmt.Println("Pinged your deployment. You successfully connected to MongoDB!")
+	log.Printf("MongoDB connected; selected database %q", database.Name())
 
 	// INITIALIZE JOB QUEUE AND HTTP SERVER
 	queue := jobs.NewQueue(4, 100)
@@ -69,5 +56,5 @@ func main() {
 	mux.HandleFunc("/jobs", jobs.NewHandler(queue))
 
 	log.Println("server listening on :8080")
-	log.Fatal(http.ListenAndServe(":8080", mux))
+	return http.ListenAndServe(":8080", mux)
 }

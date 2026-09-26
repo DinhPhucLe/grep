@@ -1,0 +1,45 @@
+[
+  {
+    "create": "projects",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["_id", "user_id", "name", "root_path", "repo_url"],
+        "additionalProperties": false,
+        "properties": {
+          "_id": {
+            "bsonType": "objectId",
+            "description": "PROJECT ID: MongoDB ObjectId."
+          },
+          "user_id": {
+            "bsonType": "objectId",
+            "description": "PROJECT OWNER: References users._id; existence must be checked by the application."
+          },
+          "name": {
+            "bsonType": "string",
+            "description": "PROJECT NAME: Required string."
+          },
+          "root_path": {
+            "bsonType": "string",
+            "description": "ROOT PATH: Required project directory path."
+          },
+          "repo_url": {
+            "bsonType": "string",
+            "description": "REPOSITORY URL: Required string."
+          }
+        }
+      }
+    },
+    "validationLevel": "strict",
+    "validationAction": "error"
+  },
+  {
+    "createIndexes": "projects",
+    "indexes": [
+      {
+        "key": { "user_id": 1 },
+        "name": "projects_by_user"
+      }
+    ]
+  }
+]
