@@ -39,8 +39,14 @@ type model struct {
 	revealFocus                               bool
 	showHelp                                  bool
 	helpOffset                                int
+	clipboard                                 clipboardAccess
+	selection                                 textSelection
+	clipboardNotice, quitDraft                string
+	quitMode                                  bool
+	pendingPastes                             int
 }
 type frameMsg time.Time
+type terminalSizeMsg struct{ width, height int }
 type readyMsg struct {
 	thread string
 	err    error
@@ -62,6 +68,7 @@ func newModel(c *appServer, cwd string, o uiOptions) *model {
 		d.Cursor.SetMode(cursor.CursorStatic)
 	}
 	m := &model{client: c, ctx: context.Background(), opts: o, workspace: cwd, status: "Connecting", width: 80, height: 24, draft: d, viewport: viewport.New(80, 16), follow: true, focus: -1, byID: map[string]*conversationItem{}, seenRequests: map[string]bool{}}
+	m.clipboard = systemClipboard{}
 	m.resize()
 	return m
 }
@@ -104,6 +111,33 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case clipboardResult:
+		if !v.copied {
+			m.pendingPastes = max(0, m.pendingPastes-1)
+		}
+		if v.err != nil {
+			m.clipboardNotice = "Clipboard unavailable: " + v.err.Error()
+			return m, nil
+		}
+		if v.copied {
+			m.clipboardNotice = "Copied to clipboard"
+			m.selection = textSelection{}
+		} else {
+			text := strings.ReplaceAll(strings.ReplaceAll(v.text, "\r\n", "\n"), "\r", "\n")
+			if v.requestID != "" {
+				if m.requestInputActive() {
+					r := m.requests[0]
+					if string(r.message.ID) == v.requestID && r.question == v.question {
+						r.input, _ = r.input.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text), Paste: true})
+						m.clipboardNotice = "Pasted — Enter to confirm"
+					}
+				}
+				return m, nil
+			}
+			m.draft.InsertString(text)
+			m.clipboardNotice = "Pasted — Enter to send"
+		}
+		return m, nil
 	case rpcBatch:
 		var cmds []tea.Cmd
 		for _, e := range v {
@@ -150,11 +184,16 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.reduce(v)
 	case tea.WindowSizeMsg:
+		m.selection = textSelection{}
 		m.width = max(1, v.Width)
 		m.height = max(1, v.Height)
 		m.resize()
 		m.dirty = true
 		m.refresh()
+	case terminalSizeMsg:
+		if v.width > 0 && v.height > 0 && (v.width != m.width || v.height != m.height) {
+			return m.update(tea.WindowSizeMsg{Width: v.width, Height: v.height})
+		}
 	case frameMsg:
 		m.frame++
 		if m.busy && !m.opts.ReducedMotion && m.frame%15 == 0 {
@@ -162,6 +201,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.dirty {
 			m.refresh()
+		}
+		if m.client != nil && m.frame%6 == 0 {
+			return m, tea.Batch(tick(), pollTerminalSize)
 		}
 		return m, tick()
 	case tea.MouseMsg:
@@ -177,6 +219,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.requestMouse(v)
 			return m, nil
 		}
+		if m.selectionMouse(v) {
+			return m, nil
+		}
 		if v.Action != tea.MouseActionPress {
 			return m, nil
 		}
@@ -188,8 +233,42 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyMsg:
+		// Paste is content, not a sequence of shortcuts or submit keys.
+		// Handle it before focus navigation, approvals, and slash commands.
+		if v.Paste && v.Type == tea.KeyRunes {
+			text := strings.ReplaceAll(strings.ReplaceAll(string(v.Runes), "\r\n", "\n"), "\r", "\n")
+			if len(m.requests) > 0 {
+				if m.requestInputActive() {
+					r := m.requests[0]
+					r.input, _ = r.input.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text), Paste: true})
+				}
+				return m, nil
+			}
+			if m.showHelp || m.quitMode {
+				return m, nil
+			}
+			m.selection = textSelection{}
+			m.focus = -1
+			m.draft.Focus()
+			m.draft.InsertString(text)
+			m.clipboardNotice = "Pasted — Enter to send"
+			return m, nil
+		}
+		if v.String() == "enter" && m.pendingPastes > 0 {
+			return m, nil
+		}
 		if v.String() == "ctrl+c" {
-			return m, tea.Quit
+			return m, m.copyText()
+		}
+		if handled, cmd := m.quitKey(v); handled {
+			return m, cmd
+		}
+		m.clipboardNotice = ""
+		if len(m.selection.lines) > 0 {
+			m.selection = textSelection{}
+			if v.String() == "esc" {
+				return m, nil
+			}
 		}
 		if m.showHelp {
 			m.helpKey(v)
@@ -199,6 +278,14 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showHelp = true
 			m.helpOffset = 0
 			return m, nil
+		}
+		if !v.Paste && v.Type == tea.KeyRunes && string(v.Runes) == "/" && (len(m.requests) == 0 && m.focus != -1 || len(m.requests) > 0 && !m.requestInputActive()) {
+			m.quitMode = true
+			m.quitDraft = "/"
+			return m, nil
+		}
+		if (v.String() == "ctrl+v" || v.String() == "insert" || v.String() == "alt+insert") && (m.focus == -1 && len(m.requests) == 0 || m.requestInputActive()) {
+			return m, m.pasteText()
 		}
 		if len(m.requests) > 0 {
 			return m, m.requestKey(v)
@@ -321,6 +408,7 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // Scroll the conversation without changing composer focus or its draft.
 func (m *model) scrollHistory(lines int) {
+	m.selection = textSelection{}
 	if m.dirty {
 		m.refresh()
 	}

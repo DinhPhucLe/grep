@@ -72,6 +72,15 @@ func (m *model) resize() {
 	}
 }
 func (m *model) footer() string {
+	if m.quitMode {
+		return m.shortcutStyle("Command: " + m.quitDraft + " · Enter run · Esc cancel")
+	}
+	if m.clipboardNotice != "" {
+		return ansi.Truncate(safeText(m.clipboardNotice), m.width, "")
+	}
+	if m.selection.selected {
+		return m.shortcutStyle("Ctrl+C copy · Esc clear · /quit exit")
+	}
 	text := "Wheel/PgUp/PgDn scroll · Enter send · F1 help"
 	if m.focus != -1 {
 		text = "↑↓ scroll · End latest · Tab focus · F1 help"
@@ -138,7 +147,7 @@ func (m *model) View() string {
 		parts = append(parts, m.accent(ansi.Truncate(header, m.width, ""), "13"))
 	}
 	if m.viewport.Height > 0 {
-		parts = append(parts, m.viewport.View())
+		parts = append(parts, m.conversationView())
 	}
 	bottom := m.bottom()
 	if len(m.requests) > 0 {
@@ -165,7 +174,10 @@ Alt+Left / Alt+Right: scroll while entering text
 Ctrl+N / Ctrl+P: read approval details down / up
 Ctrl+D: show exact approval request
 Esc: interrupt the running task
-Ctrl+C or /quit: exit
+Drag over conversation text: select it
+Ctrl+C: copy selected text
+Ctrl+V / Insert: paste into the composer
+/quit: exit (also works during approvals)
 F1 or Esc: close this help`
 
 func (m *model) helpView() string {

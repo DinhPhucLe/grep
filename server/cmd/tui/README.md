@@ -69,7 +69,11 @@ Requires `codex` on `PATH`. The full-window conversation keeps a fixed composer,
 
 Scroll the conversation with the mouse wheel or Page Up / Page Down, including while an answer is streaming. Ctrl+Home jumps to the first message and Ctrl+End returns to the latest output from any focus. Scrolling up pauses following; new text displays `New output below`. Scrolling back to the bottom resumes following. Earlier messages stay in the conversation.
 
-Tab / Shift+Tab move among the composer, history, and activity cards. Up / Down scroll one line when history or a card is focused; they continue to move the cursor when composing a prompt. Enter expands a focused card; End returns to the latest output. Esc requests interruption and waits for the server's turn completion. `/quit`, `/exit`, and Ctrl+C restore the terminal and exit.
+Tab / Shift+Tab move among the composer, history, and activity cards. Up / Down scroll one line when history or a card is focused; they continue to move the cursor when composing a prompt. Enter expands a focused card; End returns to the latest output. Esc clears a text selection first, or requests interruption when no selection is active. Type `/quit` (or `/exit`) and Enter to restore the terminal and exit, including while an approval is open. Ctrl+C copies text and does not quit.
+
+Click and drag over visible conversation text to select it, then press Ctrl+C to copy. Selection includes complete Unicode characters and omits terminal styling and display padding. Selected text stays stable while responses continue arriving; Esc, scrolling, resizing, or a new approval clears the selection. Clipboard success or errors appear in the footer.
+
+Press Ctrl+V or Insert to paste clipboard text into the composer or an editable server-input answer. Terminal-provided paste, including Shift+Insert where supported, is also accepted. Multiline composer pastes preserve line breaks and never submit automatically; press Enter to send. Clipboard access uses the operating system clipboard (Unix installations may require the clipboard tools supported by `atotto/clipboard`).
 
 Resizing reflows the transcript at word boundaries, for both streaming and completed answers. Words stay together unless a single token is wider than the available text area. Original message text and explicit newlines are retained.
 

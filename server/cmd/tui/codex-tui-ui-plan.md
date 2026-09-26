@@ -75,7 +75,9 @@ Proposed key bindings:
 | Page Up / Page Down | Scroll conversation history. |
 | End while history is focused | Return to latest output. |
 | Esc | Request interruption of the active turn using the installed protocol; wait for server confirmation. |
-| Ctrl+C or /quit | Preserve the documented exit behavior and restore the terminal. |
+| Ctrl+C | Copy selected conversation text. |
+| Ctrl+V / Insert | Paste clipboard text into the input without submitting. |
+| /quit | Exit and restore the terminal, including during approvals. |
 
 Allow drafting the next prompt during a turn but disable sending until the turn ends in the MVP. Label this state clearly. Treat pasted multiline text as one paste; embedded newlines must not submit a prompt automatically. Keep approval choices isolated from composer shortcuts.
 

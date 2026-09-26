@@ -58,7 +58,13 @@ func run(logging bool, opts uiOptions) error {
 	defer client.Close()
 	m := newModel(client, cwd, opts)
 	m.ctx = ctx
-	_, err = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithFPS(30)).Run()
+	inputOptions, closeInput, err := terminalInputOptions()
+	if err != nil {
+		return err
+	}
+	defer closeInput()
+	programOptions := append([]tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithFPS(30)}, inputOptions...)
+	_, err = tea.NewProgram(m, programOptions...).Run()
 	if errors.Is(err, tea.ErrInterrupted) {
 		return nil
 	}

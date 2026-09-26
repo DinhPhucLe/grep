@@ -156,6 +156,7 @@ type pendingRequest struct {
 }
 
 func (m *model) enqueueRequest(msg wireMessage) tea.Cmd {
+	m.selection = textSelection{}
 	key := string(msg.ID)
 	if m.seenRequests[key] {
 		return nil
@@ -301,6 +302,9 @@ func (m *model) requestKey(k tea.KeyMsg) tea.Cmd {
 		r.detailOffset = 0
 		return nil
 	case "enter":
+		if m.requestInputActive() && (strings.TrimSpace(r.input.Value()) == "/quit" || strings.TrimSpace(r.input.Value()) == "/exit") {
+			return tea.Quit
+		}
 		var result any
 		if len(r.questions) > 0 {
 			q := r.questions[r.question]
