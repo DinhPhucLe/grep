@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -54,6 +55,7 @@ func NewHandler(q *Queue) http.HandlerFunc {
 			// Job failed with an unexpected error.
 			http.Error(w, "job failed", http.StatusInternalServerError)
 		default:
+			log.Printf("job completed successfully with result: %s", result.Output)
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(result)
 		}
