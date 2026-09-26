@@ -6,30 +6,43 @@ import '@mantine/charts/styles.css';
 import './styles/dashboard.css';
 import { App } from './App';
 import { dashboardTheme } from './config/theme';
-import { loadDashboard } from './data/loadDashboard';
+import { useDashboardStream } from './data/useDashboardStream';
 
-const root = createRoot(document.getElementById('root')!);
+function Root() {
+  const { snapshot, status, error } = useDashboardStream();
 
-function render(content: React.ReactNode) {
-  root.render(
-    <StrictMode>
-      <MantineProvider theme={dashboardTheme} forceColorScheme="light">
-        {content}
-      </MantineProvider>
-    </StrictMode>,
-  );
-}
-
-loadDashboard()
-  .then((snapshot) => render(<App snapshot={snapshot} />))
-  .catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : 'Unknown dashboard data error';
-    render(
+  if (error && !snapshot) {
+    return (
       <Stack maw={720} mx="auto" p="xl" mt="xl">
         <Title order={1}>Dashboard data could not be loaded</Title>
-        <Alert color="red" title="Invalid dashboard snapshot">
-          <Text>{message}</Text>
+        <Alert color="red" title="Metrics stream error">
+          <Text>{error}</Text>
         </Alert>
-      </Stack>,
+      </Stack>
     );
-  });
+  }
+
+  if (!snapshot) {
+    return (
+      <Stack maw={720} mx="auto" p="xl" mt="xl">
+        <Title order={1}>Waiting for session</Title>
+        <Text c="dimmed">Connecting to cortisol-server ({status})…</Text>
+        {error ? (
+          <Alert color="yellow" title="Stream warning">
+            <Text>{error}</Text>
+          </Alert>
+        ) : null}
+      </Stack>
+    );
+  }
+
+  return <App snapshot={snapshot} status={status} />;
+}
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <MantineProvider theme={dashboardTheme} forceColorScheme="light">
+      <Root />
+    </MantineProvider>
+  </StrictMode>,
+);

@@ -7,11 +7,18 @@ import (
 	"net/http"
 	"os"
 
+<<<<<<< HEAD
 	"cortisol-server/internal/db"
 	"cortisol-server/internal/health"
 	"cortisol-server/internal/jobs"
 
 	"github.com/joho/godotenv"
+=======
+	"cortisol-server/server/internal/dashmetrics"
+	"cortisol-server/server/internal/health"
+	"cortisol-server/server/internal/jobs"
+	"cortisol-server/server/internal/session"
+>>>>>>> ae74dd8 (do sth i forgot)
 )
 
 func main() {
@@ -50,10 +57,13 @@ func run() error {
 
 	// INITIALIZE JOB QUEUE AND HTTP SERVER
 	queue := jobs.NewQueue(4, 100)
-	mux := http.NewServeMux()
+	sessions := session.NewManager(nil)
+	hub := dashmetrics.NewHub(sessions)
 
+	mux := http.NewServeMux()
 	mux.HandleFunc("/health", health.Handler)
 	mux.HandleFunc("/jobs", jobs.NewHandler(queue))
+	mux.HandleFunc("/dash-metrics", hub.Handler())
 
 	log.Println("server listening on :8080")
 	return http.ListenAndServe(":8080", mux)

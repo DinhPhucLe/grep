@@ -11,7 +11,7 @@ const snapshot = parseDashboardSnapshot(mockDashboard);
 function renderDashboard() {
   return render(
     <MantineProvider theme={dashboardTheme} defaultColorScheme="light">
-      <DashboardPage snapshot={snapshot} />
+      <DashboardPage snapshot={snapshot} status="mock" />
     </MantineProvider>,
   );
 }
