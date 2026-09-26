@@ -1,0 +1,207 @@
+{
+  "schemaVersion": "dashboard.v1",
+  "sequence": 42,
+  "generatedAt": "2026-09-26T18:42:00Z",
+  "session": {
+    "id": "hackathon-demo-042",
+    "startedAt": "2026-09-26T18:12:00Z",
+    "observedThrough": "2026-09-26T18:42:00Z",
+    "state": "active"
+  },
+  "metrics": [
+    {
+      "id": "acceptance_ratio",
+      "category": "significant",
+      "label": "Acceptance ratio",
+      "description": "Explicitly accepted suggestions out of suggestions shown.",
+      "status": "available",
+      "display": { "primary": "65%", "secondary": "13 of 20 shown" },
+      "visualization": {
+        "type": "ratio",
+        "value": 0.65,
+        "minimum": 0,
+        "maximum": 1,
+        "segments": [
+          { "label": "Accepted", "value": 13 },
+          { "label": "Rejected", "value": 5 },
+          { "label": "Unresolved", "value": 2 }
+        ]
+      }
+    },
+    {
+      "id": "median_time_to_approval",
+      "category": "significant",
+      "label": "Median time to approval",
+      "description": "Time between showing and accepting a suggestion.",
+      "status": "available",
+      "display": { "primary": "18.4s", "secondary": "13 accepted suggestions" },
+      "visualization": {
+        "type": "histogram",
+        "median": { "value": 18400, "unit": "milliseconds" },
+        "bins": [
+          { "label": "0–5s", "value": 2 },
+          { "label": "5–15s", "value": 4 },
+          { "label": "15–30s", "value": 5 },
+          { "label": "30s+", "value": 2 }
+        ]
+      }
+    },
+    {
+      "id": "median_active_post_edit_response_time",
+      "category": "significant",
+      "label": "Median active post-edit response",
+      "description": "Active-session time until the next user action after an agent edit.",
+      "status": "available",
+      "display": { "primary": "42s", "secondary": "9 resolved · 2 pending" },
+      "visualization": {
+        "type": "histogram",
+        "median": { "value": 42000, "unit": "milliseconds" },
+        "bins": [
+          { "label": "0–15s", "value": 1 },
+          { "label": "15–30s", "value": 2 },
+          { "label": "30–60s", "value": 4 },
+          { "label": "60s", "value": 2 }
+        ]
+      }
+    },
+    {
+      "id": "estimated_active_time",
+      "category": "descriptive",
+      "label": "Estimated active time",
+      "description": "User activity time with idle gaps capped at one minute.",
+      "status": "available",
+      "display": { "primary": "12m 42s" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "total_files_edited",
+      "category": "descriptive",
+      "label": "Files edited",
+      "status": "available",
+      "display": { "primary": "6", "secondary": "Includes reverted files" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "final_added_lines",
+      "category": "descriptive",
+      "label": "Final added lines",
+      "status": "available",
+      "display": { "primary": "+148", "secondary": "Against session baseline" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "total_model_requests",
+      "category": "descriptive",
+      "label": "Model requests",
+      "status": "available",
+      "display": { "primary": "23" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "total_plans",
+      "category": "descriptive",
+      "label": "Distinct plans",
+      "status": "available",
+      "display": { "primary": "3" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "total_acceptances",
+      "category": "descriptive",
+      "label": "Acceptances",
+      "status": "available",
+      "display": { "primary": "13" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "total_rejections",
+      "category": "descriptive",
+      "label": "Rejections",
+      "status": "available",
+      "display": { "primary": "5" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "total_user_prompts",
+      "category": "descriptive",
+      "label": "User prompts",
+      "status": "available",
+      "display": { "primary": "11" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "average_prompt_length",
+      "category": "descriptive",
+      "label": "Average prompt length",
+      "status": "available",
+      "display": { "primary": "126", "secondary": "Unicode characters" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "median_prompt_length",
+      "category": "descriptive",
+      "label": "Median prompt length",
+      "status": "available",
+      "display": { "primary": "94", "secondary": "Unicode characters" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "output_tokens",
+      "category": "descriptive",
+      "label": "Output tokens",
+      "status": "available",
+      "display": { "primary": "38,420", "secondary": "Provider reported" },
+      "visualization": { "type": "stat" }
+    }
+  ],
+  "summary": {
+    "status": "available",
+    "bullets": [
+      "The user supplied a concrete dashboard goal, MVP constraints, and a server-owned metric contract.",
+      "They directed architecture choices by separating calculation, presentation data, and frontend layout responsibilities.",
+      "They questioned the initial no-library approach and redirected the client toward a general-purpose UI system.",
+      "They requested validation through a runnable mock, setup documentation, and a complete production build.",
+      "Raw CLI event telemetry is not connected yet, so this summary and all displayed values use deterministic mock evidence."
+    ]
+  },
+  "heatmap": {
+    "mode": "history",
+    "files": [
+      {
+        "path": "internal/metrics/acceptance.go",
+        "rows": [
+          { "rowId": "a-1", "oldLineNumber": 18, "newLineNumber": 18, "content": "func AcceptanceRatio(shown, accepted int) *float64 {", "state": "context", "churnCount": 0, "intensity": 0 },
+          { "rowId": "a-2", "oldLineNumber": 19, "newLineNumber": null, "content": "\treturn float64(accepted) / float64(shown)", "state": "deleted_or_replaced", "churnCount": 1, "intensity": 1 },
+          { "rowId": "a-3", "oldLineNumber": null, "newLineNumber": 19, "content": "\tif shown == 0 {", "state": "retained_change", "churnCount": 0, "intensity": 0 },
+          { "rowId": "a-4", "oldLineNumber": null, "newLineNumber": 20, "content": "\t\treturn nil", "state": "retained_change", "churnCount": 0, "intensity": 0 },
+          { "rowId": "a-5", "oldLineNumber": null, "newLineNumber": 21, "content": "\t}", "state": "retained_change", "churnCount": 0, "intensity": 0 },
+          { "rowId": "a-6", "oldLineNumber": null, "newLineNumber": 22, "content": "\tratio := float64(accepted) / float64(shown)", "state": "retained_change", "churnCount": 0, "intensity": 0 },
+          { "rowId": "a-7", "oldLineNumber": null, "newLineNumber": 23, "content": "\treturn &ratio", "state": "retained_change", "churnCount": 0, "intensity": 0 },
+          { "rowId": "a-8", "oldLineNumber": 20, "newLineNumber": 24, "content": "}", "state": "context", "churnCount": 0, "intensity": 0 }
+        ]
+      },
+      {
+        "path": "dashboard/src/components/metrics/MetricRenderer.tsx",
+        "rows": [
+          { "rowId": "b-1", "oldLineNumber": null, "newLineNumber": 8, "content": "const renderers = {", "state": "retained_change", "churnCount": 0, "intensity": 0 },
+          { "rowId": "b-2", "oldLineNumber": 8, "newLineNumber": null, "content": "  acceptance_ratio: AcceptanceCard,", "state": "deleted_or_replaced", "churnCount": 2, "intensity": 2 },
+          { "rowId": "b-3", "oldLineNumber": null, "newLineNumber": 9, "content": "  stat: StatMetricCard,", "state": "retained_change", "churnCount": 0, "intensity": 0 },
+          { "rowId": "b-4", "oldLineNumber": 9, "newLineNumber": null, "content": "  approval_latency: ApprovalCard,", "state": "deleted_or_replaced", "churnCount": 3, "intensity": 3 },
+          { "rowId": "b-5", "oldLineNumber": null, "newLineNumber": 10, "content": "  ratio: RatioMetricCard,", "state": "retained_change", "churnCount": 0, "intensity": 0 },
+          { "rowId": "b-6", "oldLineNumber": 10, "newLineNumber": null, "content": "  post_edit_latency: PostEditCard,", "state": "deleted_or_replaced", "churnCount": 4, "intensity": 4 },
+          { "rowId": "b-7", "oldLineNumber": null, "newLineNumber": 11, "content": "  histogram: HistogramMetricCard,", "state": "retained_change", "churnCount": 0, "intensity": 0 },
+          { "rowId": "b-8", "oldLineNumber": null, "newLineNumber": 12, "content": "} satisfies MetricRendererRegistry;", "state": "retained_change", "churnCount": 0, "intensity": 0 }
+        ]
+      },
+      {
+        "path": "dashboard/README.md",
+        "rows": [
+          { "rowId": "c-1", "oldLineNumber": null, "newLineNumber": 1, "content": "# Cortisol dashboard", "state": "retained_change", "churnCount": 0, "intensity": 0 },
+          { "rowId": "c-2", "oldLineNumber": null, "newLineNumber": 2, "content": "", "state": "retained_change", "churnCount": 0, "intensity": 0 },
+          { "rowId": "c-3", "oldLineNumber": null, "newLineNumber": 3, "content": "Run `npm install` and `npm run dev`.", "state": "retained_change", "churnCount": 0, "intensity": 0 },
+          { "rowId": "c-4", "oldLineNumber": null, "newLineNumber": 4, "content": "The current build reads a static dashboard snapshot.", "state": "retained_change", "churnCount": 0, "intensity": 0 }
+        ]
+      }
+    ]
+  }
+}
