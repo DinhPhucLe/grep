@@ -21,6 +21,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"cortisol-server/tui/metricsstreamer"
 )
 
 const approvalPrompt = "approve? [y/N] "
@@ -28,6 +30,7 @@ const approvalPrompt = "approve? [y/N] "
 func main() {
 	logFlag := flag.Bool("log", false, "record full JSON-RPC session under tui/log/")
 	viewFlag := flag.Bool("view", false, "pretty-print a session JSONL (optional path; default: latest in tui/log/)")
+	metricsURL := flag.String("metrics-url", "ws://127.0.0.1:8080/dash-metrics", "cortisol-server dash-metrics WebSocket URL")
 	flag.Parse()
 
 	if *viewFlag {
@@ -55,12 +58,18 @@ func main() {
 		defer slog.Close()
 	}
 
+	metrics := metricsstreamer.New(*metricsURL)
+
 	stdin := newStdinReader()
-	client, err := startAppServer(ctx, stdin, slog)
+	client, err := startAppServer(ctx, stdin, slog, metrics)
 	if err != nil {
 		fatal(err)
 	}
 	defer client.Close()
+	defer func() {
+		metrics.SessionEnd()
+		metrics.Close()
+	}()
 
 	// Ctrl+C must unblock stdin reads and not hang on a pending approval.
 	go func() {
@@ -69,6 +78,8 @@ func main() {
 		if slog != nil {
 			slog.Close()
 		}
+		metrics.SessionEnd()
+		metrics.Close()
 		_ = os.Stdin.Close()
 		client.Close()
 		os.Exit(130)
@@ -78,10 +89,16 @@ func main() {
 		fatal(err)
 	}
 
+	// Open metrics stream only after Codex initialize + initialized complete.
+	if err := metrics.Connect(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "tui: metrics stream unavailable (%v) — continuing without it\n", err)
+	}
+
 	threadID, err := client.StartThread(ctx, cwd)
 	if err != nil {
 		fatal(err)
 	}
+	metrics.Hello(threadID)
 	if slog != nil {
 		if err := slog.BindThread(threadID); err != nil {
 			fatal(err)
@@ -92,6 +109,7 @@ func main() {
 	ui.println("cortisol test tui — connected to codex app-server")
 	ui.println("cwd: " + cwd)
 	ui.println("thread: " + threadID)
+	ui.println("metrics: " + *metricsURL)
 	if slog != nil {
 		ui.println("log: " + slog.Path())
 	}
@@ -455,6 +473,7 @@ type appServer struct {
 	stdout    *bufio.Reader
 	userStdin *stdinReader
 	log       *sessionLogger
+	metrics   *metricsstreamer.Client
 
 	mu       sync.Mutex
 	nextID   atomic.Int64
@@ -481,7 +500,7 @@ type wireMessage struct {
 	Error  *rpcError       `json:"error"`
 }
 
-func startAppServer(ctx context.Context, userStdin *stdinReader, slog *sessionLogger) (*appServer, error) {
+func startAppServer(ctx context.Context, userStdin *stdinReader, slog *sessionLogger, metrics *metricsstreamer.Client) (*appServer, error) {
 	bin, err := exec.LookPath("codex")
 	if err != nil {
 		return nil, fmt.Errorf("codex not on PATH: %w", err)
@@ -511,6 +530,7 @@ func startAppServer(ctx context.Context, userStdin *stdinReader, slog *sessionLo
 		stdout:    bufio.NewReaderSize(stdoutPipe, 1024*1024),
 		userStdin: userStdin,
 		log:       slog,
+		metrics:   metrics,
 		pending:   make(map[int64]chan rpcResponse),
 	}
 	go c.readLoop()
@@ -556,7 +576,11 @@ func (c *appServer) readLoop() {
 			fmt.Fprintf(os.Stderr, "tui: bad json from app-server: %v\n", err)
 			continue
 		}
-		c.log.Record("in", json.RawMessage(append([]byte(nil), line...)))
+		raw := json.RawMessage(append([]byte(nil), line...))
+		c.log.Record("in", raw)
+		if c.metrics != nil {
+			c.metrics.Record("in", raw)
+		}
 
 		if len(msg.ID) > 0 && msg.Method == "" {
 			c.deliverResponse(msg)
@@ -618,7 +642,11 @@ func (c *appServer) writeJSON(v any) error {
 	if err != nil {
 		return err
 	}
-	c.log.Record("out", json.RawMessage(append([]byte(nil), data...)))
+	raw := json.RawMessage(append([]byte(nil), data...))
+	c.log.Record("out", raw)
+	if c.metrics != nil {
+		c.metrics.Record("out", raw)
+	}
 	data = append(data, '\n')
 	_, err = c.stdin.Write(data)
 	return err

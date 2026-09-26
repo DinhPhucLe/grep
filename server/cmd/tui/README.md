@@ -1,5 +1,7 @@
 # Codex app-server client (TUI)
 
+Run command codex mcp add openaiDeveloperDocs --url https://developers.openai.com/mcp to add the codex docs mcp for your agent
+
 ## Architecture
 
 **Codex app-server** is the main process. It runs the Codex AI agent, owns the session, and performs coding actions (edits, shell, tools). Clients talk to it over JSON-RPC (stdio in our case).

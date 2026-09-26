@@ -1,12 +1,19 @@
 import { Container, Grid, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { dashboardLayout } from '../config/layout';
 import type { DashboardSnapshot } from '../contracts/dashboard';
+import type { StreamStatus } from '../data/dashboardStream';
 import { CodeHeatmap } from './heatmap/CodeHeatmap';
 import { DashboardHeader } from './DashboardHeader';
 import { MetricRenderer } from './metrics/MetricRenderer';
 import { SessionSummary } from './SessionSummary';
 
-export function DashboardPage({ snapshot }: { snapshot: DashboardSnapshot }) {
+export function DashboardPage({
+  snapshot,
+  status,
+}: {
+  snapshot: DashboardSnapshot;
+  status: StreamStatus;
+}) {
   const significant = snapshot.metrics.filter((metric) => metric.category === 'significant');
   const descriptive = snapshot.metrics.filter((metric) => metric.category === 'descriptive');
 
@@ -18,7 +25,11 @@ export function DashboardPage({ snapshot }: { snapshot: DashboardSnapshot }) {
       py={{ base: 'md', sm: 'xl' }}
     >
       <Stack gap={dashboardLayout.sectionGap}>
-        <DashboardHeader session={snapshot.session} generatedAt={snapshot.generatedAt} />
+        <DashboardHeader
+          session={snapshot.session}
+          generatedAt={snapshot.generatedAt}
+          status={status}
+        />
 
         <section aria-labelledby="signals-heading">
           <Text className="eyebrow">Significant metrics</Text>

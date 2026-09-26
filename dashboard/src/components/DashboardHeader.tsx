@@ -1,9 +1,11 @@
 import { Badge, Group, Paper, Stack, Text, Title } from '@mantine/core';
 import type { DashboardSnapshot } from '../contracts/dashboard';
+import type { StreamStatus } from '../data/dashboardStream';
 
 interface DashboardHeaderProps {
   session: DashboardSnapshot['session'];
   generatedAt: string;
+  status: StreamStatus;
 }
 
 const formatTime = (value: string) =>
@@ -14,9 +16,29 @@ const formatTime = (value: string) =>
     minute: '2-digit',
   }).format(new Date(value));
 
-export function DashboardHeader({ session, generatedAt }: DashboardHeaderProps) {
+const statusLabel = (status: StreamStatus): string => {
+  switch (status) {
+    case 'live':
+      return 'Live';
+    case 'connecting':
+      return 'Connecting';
+    case 'disconnected':
+      return 'Disconnected';
+    case 'mock':
+      return 'Mock data';
+  }
+};
+
+export function DashboardHeader({ session, generatedAt, status }: DashboardHeaderProps) {
   const sessionBadgeClass =
     session.state === 'active' ? 'status-badge status-badge--active' : 'status-badge status-badge--idle';
+
+  const feedBadgeClass =
+    status === 'live'
+      ? 'status-badge status-badge--active'
+      : status === 'mock'
+        ? 'status-badge status-badge--mock'
+        : 'status-badge status-badge--idle';
 
   return (
     <Paper className="dashboard-header" p={{ base: 'lg', sm: 'xl' }} radius={0} withBorder>
@@ -34,8 +56,8 @@ export function DashboardHeader({ session, generatedAt }: DashboardHeaderProps) 
             </div>
           </Group>
           <Group gap="xs" mt="xs">
-            <Badge className="status-badge status-badge--mock" variant="filled">
-              Mock data
+            <Badge className={feedBadgeClass} variant="filled">
+              {statusLabel(status)}
             </Badge>
             <Badge className={sessionBadgeClass} variant="filled">
               {session.state}
