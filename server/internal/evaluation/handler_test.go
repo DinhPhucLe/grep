@@ -54,7 +54,7 @@ func TestHandlerErrors(t *testing.T) {
 }
 func TestEvaluationHTTPPipeline(t *testing.T) {
 	repo := &memoryRepository{}
-	service := NewService(&fakeCompleter{raw: `{"verdict":"clear","summary":"Requirements established","gaps":[]}`}, repo, "model")
+	service := NewService(&fakeCompleter{raw: `{"verdict":"clear","ambiguity_score":0.0,"summary":"Requirements established","gaps":[]}`}, repo, "model")
 	queue := jobs.NewQueue(1, 1, service.Evaluate)
 	defer queue.Close()
 	handler := NewHandler(queue, time.Second)

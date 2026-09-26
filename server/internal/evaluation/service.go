@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"time"
 
 	"cortisol-server/internal/cortex"
@@ -43,6 +44,13 @@ func (s *Service) Evaluate(ctx context.Context, request Request) (Record, error)
 		return Record{}, err
 	}
 	var body Body
+	// A float64 alone cannot distinguish a missing/null score from a valid zero.
+	var required struct {
+		Score *float64 `json:"ambiguity_score"`
+	}
+	if json.Unmarshal(raw, &required) != nil || required.Score == nil {
+		return Record{}, cortex.ErrInvalidResponse
+	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&body) != nil || decoder.Decode(new(any)) != io.EOF || body.Validate() != nil {
@@ -53,6 +61,7 @@ func (s *Service) Evaluate(ctx context.Context, request Request) (Record, error)
 		if ctx.Err() != nil {
 			return Record{}, ctx.Err()
 		}
+		log.Printf("evaluation persistence failed: %v", err)
 		return Record{}, ErrStorage
 	}
 	return record, nil

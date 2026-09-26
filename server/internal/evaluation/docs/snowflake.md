@@ -142,6 +142,7 @@ A successful call returns HTTP **201**. Example (the judgment varies by input/mo
   "evaluation": {
     "verdict": "ambiguous",
     "summary": "The affected login behavior is unspecified.",
+    "ambiguity_score": 0.78,
     "gaps": [
       {
         "description": "No failing scenario or expected outcome is provided.",

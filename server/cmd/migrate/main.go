@@ -23,6 +23,7 @@ func run() error {
 	envFile := flag.String("env", ".env", "environment file to load")
 	directory := flag.String("path", "internal/db/migrations", "directory containing JSON migration files")
 	check := flag.Bool("check", false, "validate migration files without connecting to MongoDB")
+	force := flag.Int("force", -1, "reset a dirty migration to the immediately preceding version without running migrations")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments: this command only applies up migrations")
@@ -31,6 +32,9 @@ func run() error {
 		return err
 	}
 	if *check {
+		if *force >= 0 {
+			return fmt.Errorf("-check and -force cannot be used together")
+		}
 		log.Println("Migration files are valid; no database connection was made")
 		return nil
 	}
@@ -42,6 +46,14 @@ func run() error {
 	config, err := db.ConfigFromEnv()
 	if err != nil {
 		return err
+	}
+	if *force >= 0 {
+		log.Printf("Resetting dirty migration state to version %d in database %q", *force, config.Database)
+		if err := db.ForceDirtyVersion(config, *directory, uint(*force)); err != nil {
+			return err
+		}
+		log.Printf("Dirty migration state reset to version %d; run this command again to apply pending migrations", *force)
+		return nil
 	}
 
 	// APPLY PENDING MIGRATIONS TO ATLAS AND PRINT THE RESULTING VERSION
