@@ -209,6 +209,9 @@ dashboard/dist/
 dashboard/coverage/
 dashboard/*.tsbuildinfo
 
+# Codex app-server generated API schemas (local regenerate)
+schemas/
+
 # Ruff stuff:
 .ruff_cache/
 
