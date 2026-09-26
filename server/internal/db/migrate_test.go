@@ -8,7 +8,7 @@ import (
 
 // CHECK THE COMMITTED MIGRATIONS WITHOUT CONNECTING TO ATLAS
 func TestCheckProjectMigrations(t *testing.T) {
-	if err := CheckMigrations("../../db/migrations"); err != nil {
+	if err := CheckMigrations("migrations"); err != nil {
 		t.Fatal(err)
 	}
 }
