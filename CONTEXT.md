@@ -1,75 +1,95 @@
-# Vibe Coding Observatory — Decisions and Metric Contract (v1)
+# Vibe Coding Observatory — Project context
 
-Status: first implementation context for the hackathon MVP.
-
-This document records decisions already made. Treat them as constraints unless the user explicitly changes them. Do not expand the scope with additional behavioral scores, interventions, platforms, or metrics.
+Hackathon MVP decisions and metric contract. Treat these as constraints unless explicitly changed. Do not expand scope with extra behavioral scores, interventions, platforms, or metrics.
 
 ## 1. Project description
 
-The project is a terminal-based observability application that sits on top of AI coding-agent CLIs. It records activity exposed by the wrapped session, derives a small set of metrics, and presents them in a dashboard.
+The product is a terminal-based observability layer for AI coding sessions. The developer works through **our TUI**, which is a client of **Codex app-server**. The TUI records live session traffic, derives a small set of metrics, and presents them in a dashboard.
 
-The goal is to detect and visualize evidence associated with **vibe coding**.
-
-For this project, vibe coding means:
+The goal is to detect and visualize evidence associated with **vibe coding**:
 
 > Overreliance on AI without active human control of the engineering process. The user lets AI perform planning, design, implementation, testing, or expected-behavior decisions without demonstrating meaningful direction, evaluation, or ownership.
 
-This definition is motivated by Kazemitabaar et al., *Exploring the Design Space of Cognitive Engagement Techniques with AI-Generated Code for Enhanced Learning* (IUI 2025; arXiv:2410.08922). The paper frames the problem using two related concepts:
+Motivated by Kazemitabaar et al., *Exploring the Design Space of Cognitive Engagement Techniques with AI-Generated Code for Enhanced Learning* (IUI 2025; arXiv:2410.08922):
 
-- **Automation bias:** a tendency to favor automated recommendations, including when contradictory evidence exists.
+- **Automation bias:** favoring automated recommendations even against contradictory evidence.
 - **Cognitive offloading:** using an external aid to reduce one's own cognitive effort.
 
-The project does not claim that telemetry can prove a person's internal understanding. It reports observable session behavior and a qualitative interpretation. Every metrics we add should try to meaningfully add an insight relevant to these categories
+Telemetry cannot prove internal understanding. We report observable session behavior and a qualitative interpretation. Every metric should add insight relevant to those categories.
 
-## 2. Philosophy and architecture guidelines
+## 2. Architecture direction
 
-### 2.1 Non-invasive observation
+### 2.1 TUI as Codex app-server client
 
-- The application sits between the user and an AI-agent CLI.
-- For now we only collect CLI / session sourced metrics such as observes available prompts, responses, suggestion decisions, plan events, token metadata, file changes, and timestamps. Metrics sourced from environment / filesystem such as file metadata etc are later consideration.
-- It must not block, delay, rewrite, or otherwise hinder the developer's interaction with the coding agent.
-- The MVP is observation and visualization only.
-- A playful **cortisol level** may visualize the significant metrics, but it is a product metaphor, not a physiological measurement.
-- Descriptive dashboard numbers and the code-change heatmap do not affect the cortisol signal.
+Codex app-server is the process that runs the Codex agent and performs coding actions. Codex CLI is only OpenAI’s native client of that server. We build **our own client** in Go (`tui/`) that:
 
-### 2.2 Non-overlapping metrics
+- Spawns / connects to `codex app-server` (JSON-RPC over stdio)
+- Renders chat history
+- Sends user prompts as turns
+- Streams agent responses back to the user
+- Collects approvals and other user input when the server requests them
 
-Each significant metric must answer a distinct question not already answered by another significant metric:
+Agentics stay on app-server. The TUI does not reimplement the agent loop or patch application. Protocol detail (threads, turns, items, approvals) lives in `tui/README.md`. Regenerate API schemas locally with:
 
-- Acceptance ratio: how frequently suggestions are accepted.
-- Median time to approval: how quickly accepted suggestions are approved.
-- Post-edit response time: how quickly the user re-engages after an agent edit.
-- Qualitative session summary: what the session demonstrates in context.
+```bash
+codex app-server generate-ts --out ./schemas
+```
 
-Do not add complementary duplicates such as both acceptance rate and rejection rate as separate significant metrics. Raw acceptance and rejection counts may still appear as descriptive supporting numbers.
+### 2.2 “Non-invasive” means UX, not invisibility
 
-### 2.3 Hackathon MVP discipline
+We are **in the user’s path**: they code through our TUI instead of stock Codex CLI. That is intentional so we can observe the live session accurately.
 
-- Always choose the smallest feature that satisfies the explicit request.
-- Do not design for multiple agent platforms before one adapter works.
-- Do not introduce prediction models, long-term skill claims, intervention agents, blocking workflows, or unrequested scoring formulas.
-- Prefer mock data and stable interfaces before production ingestion.
-- Keep metric calculation independent from dashboard presentation because metric definitions and layout will change during the hackathon.
+Non-invasive here means **user experience**:
+
+- Do not block, delay, rewrite, or invent friction that hinders getting work done.
+- Approvals and prompts the agent already requires still surface; we pass them through rather than silently deciding for the user in the product path.
+- The MVP observes and visualizes; it does not intervene in engineering decisions or police the developer.
+- A playful **cortisol** metaphor may visualize significant metrics; it is not a physiological claim.
+- Descriptive dashboard numbers and the code-change heatmap do not drive the cortisol signal.
+
+### 2.3 Data source
+
+Primary live source: JSON-RPC traffic between our TUI and Codex app-server (prompts, items, approvals, completions, timestamps, token metadata when exposed). Filesystem/environment metrics are later consideration.
+
+Raw events feed metric functions; aggregations feed the dashboard. Metric calculation stays independent of dashboard layout.
+
+### 2.4 Non-overlapping significant metrics
+
+Each significant metric answers a distinct question:
+
+- Acceptance ratio — how often shown suggestions are accepted
+- Median time to approval — how quickly accepted suggestions are approved
+- Post-edit response time — how quickly the user re-engages after an agent edit
+- Qualitative session summary — what the session shows in context
+
+Do not add duplicates such as both acceptance rate and rejection rate as separate significant metrics. Raw accept/reject counts may still appear as descriptive numbers.
+
+### 2.5 Hackathon MVP discipline
+
+- Smallest feature that satisfies the explicit request
+- One agent stack first (Codex app-server); no multi-platform design ahead of need
+- No prediction models, long-term skill claims, intervention agents, or unrequested scoring formulas
+- Prefer mock data and stable interfaces before production ingestion where helpful
 
 ## 3. Abstract input vocabulary
 
-Data collection are still in dev so raw events data model are yet unspecified. The formulas below use abstract observations rather than a concrete event schema. Implementation may rename fields, but it must preserve their meaning.
+Raw event schema is still evolving. Formulas below use abstract observations. Implementation may rename fields but must preserve meaning. Concrete wire shapes come from app-server schemas and live RPC (e.g. approval requests → `suggestion_shown` / decisions; completed `fileChange` items → `agent_edit_completed`).
 
 ## 4. Dashboard metrics
 
 ### 4.1 Descriptive “small numbers”
 
-These enrich the dashboard and are left to user interpretation. They must never directly update the cortisol signal.
+Enrich the dashboard only. Never update the cortisol signal directly.
 
 #### Estimated active time
 
-**Question:** How long did the user appear to be actively engaged with the wrapped session?
+**Question:** How long did the user appear actively engaged with the session?
 
 ```text
 active_time = Σ min(time(user_activity[i+1]) - time(user_activity[i]), G)
 ```
 
-Recommended MVP default: `G = 1 minutes`. Label the result **Estimated active time**. Long agent execution or an idle open terminal must not automatically count as user activity.
+MVP default: `G = 1 minute`. Label **Estimated active time**. Long agent execution or an idle terminal must not count as user activity by itself.
 
 #### Total files edited
 
@@ -79,13 +99,11 @@ total_files_edited = count(distinct file paths changed from session baseline)
 
 #### Final added lines
 
-The number of added lines present in the current repository diff relative to the session-start baseline:
+Net additions in the current repo diff vs session-start baseline:
 
 ```text
 final_added_lines = count(addition lines in diff(session_baseline, current_state))
 ```
-
-This is a net/current-state statistic, not cumulative editing effort. Repeatedly adding and deleting the same line does not increase it if the line is absent at computation time.
 
 #### Total model requests
 
@@ -93,7 +111,7 @@ This is a net/current-state statistic, not cumulative editing effort. Repeatedly
 total_model_requests = count(model_request)
 ```
 
-This is distinct from total user prompts because an agent may make multiple model requests during one user turn.
+Distinct from user prompts: one turn may include multiple model requests.
 
 #### Total plans
 
@@ -101,17 +119,12 @@ This is distinct from total user prompts because an agent may make multiple mode
 total_plans = count(distinct explicit plan_id values)
 ```
 
-Plan updates to the same `plan_id` do not increase the count.
+Updates to the same `plan_id` do not increase the count.
 
-#### Total acceptances
+#### Total acceptances / rejections
 
 ```text
 total_acceptances = count(suggestion_accepted)
-```
-
-#### Total rejections
-
-```text
 total_rejections = count(suggestion_rejected)
 ```
 
@@ -121,19 +134,12 @@ total_rejections = count(suggestion_rejected)
 total_user_prompts = count(user_prompt)
 ```
 
-#### Average prompt length
+#### Average / median prompt length
 
-Use one unit consistently. The MVP should use Unicode character count unless the implementation already has a reliable tokenizer.
+Unicode character count unless a reliable tokenizer already exists.
 
 ```text
 average_prompt_length = sum(length(prompt_text)) / total_user_prompts
-```
-
-Return `null` when there are no user prompts.
-
-#### Median prompt length
-
-```text
 median_prompt_length = median(length(prompt_text) for each user_prompt)
 ```
 
@@ -145,31 +151,21 @@ Return `null` when there are no user prompts.
 output_tokens = sum(provider-reported output tokens across agent responses)
 ```
 
-Return `unknown`, not an estimate, when the provider does not expose token usage.
+Return `unknown` when the provider does not expose usage — do not estimate.
 
 ### 4.2 Code-line change heatmap
 
-The heatmap explains what happened to lines touched during the session. It does not update the cortisol signal.
+Explains what happened to lines touched in the session. Does not update cortisol.
 
-Minimum visual semantics:
+- **Green:** introduced or changed in-session and still present
+- **Red:** touched then deleted or replaced
+- **Darker red:** more repeated deletion/replacement churn
 
-- **Green:** a line introduced or changed during the session and still present at computation time.
-- **Red:** a touched line that was later deleted or replaced.
-- **Darker red:** a line or location with more repeated deletion/replacement churn.
-
-Required data:
-
-- Session-start file baseline.
-- Current file state.
-- Intermediate observed file/edit snapshots if churn intensity is displayed.
-
-If intermediate history is unavailable, render only the final baseline-to-current diff. Do not invent churn intensity from a final diff.
-
-The exact heatmap aggregation and code-rendering library remain implementation decisions for the next planning step.
+Needs session-start baseline, current state, and intermediate edit snapshots if churn intensity is shown. Without intermediates, render only baseline→current diff; do not invent churn from a final diff alone.
 
 ## 5. Significant metrics
 
-These are the only v1 metrics eligible to be sent to the client-side cortisol visualization.
+Only these feed the client-side cortisol visualization.
 
 ### 5.1 Acceptance ratio
 
@@ -179,7 +175,7 @@ These are the only v1 metrics eligible to be sent to the client-side cortisol vi
 acceptance_ratio = total_acceptances / count(suggestion_shown)
 ```
 
-Return `null` when no suggestions were shown. Also retain the shown, accepted, rejected, and unresolved counts so the UI can show sample size.
+Return `null` when nothing was shown. Keep shown / accepted / rejected / unresolved counts for sample size.
 
 ### 5.2 Median time to approval
 
@@ -189,15 +185,12 @@ For each accepted suggestion `s`:
 approval_latency(s) = accepted_at(s) - shown_at(s)
 median_time_to_approval = median(approval_latency(s) for accepted suggestions)
 ```
-Approval latency can be rendered as a histogram with reasonable scale
 
-Return `null` when nothing was accepted. This measures approval speed, not whether the decision was correct.
+May render as a histogram. Return `null` when nothing was accepted. Measures speed of approval, not correctness.
 
 ### 5.3 Median active post-edit response time
 
-**Question:** After the agent finishes an edit, how much active-session time passes before the user's next observable response?
-
-For every `agent_edit_completed(e)` with a later user action:
+**Question:** After the agent finishes an edit, how much active-session time passes before the user’s next observable response?
 
 ```text
 post_edit_response_time(e) = active elapsed time from edit_completed_at(e)
@@ -205,33 +198,17 @@ post_edit_response_time(e) = active elapsed time from edit_completed_at(e)
 
 median_active_post_edit_response_time = median(post_edit_response_time(e))
 ```
-Again, post_edit_response_time can be rendered as a histogram with reasonable scale
 
-Use the same active-time/inactivity rule as Estimated active time. A next response may be a prompt, acceptance, or rejection. Exclude edits with no subsequent user action and report their count as pending/unresolved context.
-
-This metric is distinct from approval latency: it covers re-engagement after an agent file edit, whether or not that edit is represented by an approval event.
+Same active-time / inactivity rule as estimated active time. Next response may be a prompt, acceptance, or rejection. Exclude edits with no later user action; report them as pending. Distinct from approval latency: re-engagement after a completed file edit, with or without an approval event.
 
 ### 5.4 Qualitative LLM session summary
 
-Produce a short bullet-list summary of the current session. It should describe observable evidence, not diagnose the user.
+Short bullet list of observable evidence — not a diagnosis of the user.
 
-Minimum criteria:
-
-- Whether the user supplied goals, constraints, context, or expected behavior.
-- Whether the user demonstrated planning or direction.
-- Whether the user questioned, corrected, rejected, or redirected AI output.
-- Whether the user requested explanations, evaluation, or verification.
-- Important uncertainty or missing telemetry.
-
-The summary must not infer comprehension solely from accepted code, polite wording, profanity, prompt length, or tool activity. It should allow `unknown` when evidence is insufficient.
-
-Future-compatible output may retain evidence event IDs and improvement suggestions, but the v1 dashboard only needs the bullet summary.
-
-The prompt will be updated in the future
+Cover whether the user supplied goals/constraints, showed direction, questioned or redirected AI output, asked for explanation/verification, and note uncertainty or missing telemetry. Do not infer comprehension from accepted code, tone, prompt length, or tool volume alone. Allow `unknown` when evidence is thin. Dashboard needs the bullet summary; richer evidence IDs can come later.
 
 ## 6. Cortisol signal boundary
 
-The client may receive some feedback from server to alert user live their "cortisol level"
-No composite cortisol formula or thresholds have been approved. Do not invent weights or convert these values into a scientific probability. Until explicitly designed, the visualization should present the signals or use mock display states without claiming physiological meaning.
+The client may show a live “cortisol level” style alert from the server. No composite formula or thresholds are approved. Do not invent weights or scientific probabilities. Until designed, present raw signals or mock display states without physiological claims.
 
-The descriptive small numbers and code heatmap are dashboard-only context and must not influence the cortisol visualization.
+Descriptive numbers and the heatmap stay dashboard-only and must not drive the cortisol visualization.

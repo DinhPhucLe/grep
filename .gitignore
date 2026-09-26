@@ -212,6 +212,9 @@ dashboard/*.tsbuildinfo
 # Codex app-server generated API schemas (local regenerate)
 schemas/
 
+# TUI session debug logs
+tui/log/
+
 # Ruff stuff:
 .ruff_cache/
 

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -25,6 +26,21 @@ import (
 const approvalPrompt = "approve? [y/N] "
 
 func main() {
+	logFlag := flag.Bool("log", false, "record full JSON-RPC session under tui/log/")
+	viewFlag := flag.Bool("view", false, "pretty-print a session JSONL (optional path; default: latest in tui/log/)")
+	flag.Parse()
+
+	if *viewFlag {
+		path := ""
+		if flag.NArg() > 0 {
+			path = flag.Arg(0)
+		}
+		if err := viewSessionLog(path); err != nil {
+			fatal(err)
+		}
+		return
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -33,8 +49,14 @@ func main() {
 		fatal(err)
 	}
 
+	var slog *sessionLogger
+	if *logFlag {
+		slog = newSessionLogger()
+		defer slog.Close()
+	}
+
 	stdin := newStdinReader()
-	client, err := startAppServer(ctx, stdin)
+	client, err := startAppServer(ctx, stdin, slog)
 	if err != nil {
 		fatal(err)
 	}
@@ -44,6 +66,9 @@ func main() {
 	go func() {
 		<-ctx.Done()
 		fmt.Fprintln(os.Stdout, "\ntui: interrupt — exiting")
+		if slog != nil {
+			slog.Close()
+		}
 		_ = os.Stdin.Close()
 		client.Close()
 		os.Exit(130)
@@ -57,11 +82,19 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
+	if slog != nil {
+		if err := slog.BindThread(threadID); err != nil {
+			fatal(err)
+		}
+	}
 
 	ui := newChatUI()
 	ui.println("cortisol test tui — connected to codex app-server")
 	ui.println("cwd: " + cwd)
 	ui.println("thread: " + threadID)
+	if slog != nil {
+		ui.println("log: " + slog.Path())
+	}
 	ui.println("approvals: untrusted (type y or n when prompted; q declines)")
 	ui.println("type a message and press enter; /quit or Ctrl+C to exit")
 	ui.println("")
@@ -98,6 +131,170 @@ func main() {
 func fatal(err error) {
 	fmt.Fprintf(os.Stderr, "tui: %v\n", err)
 	os.Exit(1)
+}
+
+// --- session JSON-RPC log (--log) ---
+
+type sessionLogger struct {
+	mu     sync.Mutex
+	buf    [][]byte // JSONL lines buffered until thread id is known
+	f      *os.File
+	path   string
+	closed bool
+	seen   map[string]struct{}
+}
+
+type logLine struct {
+	TS        string          `json:"ts"`
+	Direction string          `json:"direction"`
+	Message   json.RawMessage `json:"message"`
+}
+
+func newSessionLogger() *sessionLogger {
+	return &sessionLogger{seen: make(map[string]struct{})}
+}
+
+func resolveLogDir() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	if filepath.Base(cwd) == "tui" {
+		return filepath.Join(cwd, "log"), nil
+	}
+	return filepath.Join(cwd, "tui", "log"), nil
+}
+
+func (l *sessionLogger) Path() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.path
+}
+
+// BindThread creates tui/log/{EasternTime}_{threadID}.jsonl and flushes
+// any RPC lines captured during handshake.
+func (l *sessionLogger) BindThread(threadID string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return errors.New("session log already closed")
+	}
+	if l.f != nil {
+		return nil
+	}
+
+	dir, err := resolveLogDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		loc = time.FixedZone("EST", -5*60*60)
+	}
+	stamp := time.Now().In(loc).Format("2006-01-02T150405MST")
+	safeID := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			return r
+		default:
+			return '_'
+		}
+	}, threadID)
+	path := filepath.Join(dir, stamp+"_"+safeID+".jsonl")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	l.f = f
+	l.path = path
+	for _, line := range l.buf {
+		if _, err := l.f.Write(line); err != nil {
+			return err
+		}
+	}
+	l.buf = nil
+	return l.f.Sync()
+}
+
+func (l *sessionLogger) Record(direction string, payload any) {
+	if l == nil {
+		return
+	}
+	msg, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	entry, err := json.Marshal(logLine{
+		TS:        time.Now().UTC().Format(time.RFC3339Nano),
+		Direction: direction,
+		Message:   msg,
+	})
+	if err != nil {
+		return
+	}
+	entry = append(entry, '\n')
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return
+	}
+	key := direction + "\x00" + string(msg)
+	if _, ok := l.seen[key]; ok {
+		return
+	}
+	l.seen[key] = struct{}{}
+
+	if l.f == nil {
+		l.buf = append(l.buf, entry)
+		return
+	}
+	_, _ = l.f.Write(entry)
+	_ = l.f.Sync()
+}
+
+func (l *sessionLogger) Close() {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return
+	}
+	l.closed = true
+
+	// Unexpected exit before thread/start: still persist buffered handshake RPC.
+	if l.f == nil && len(l.buf) > 0 {
+		dir, err := resolveLogDir()
+		if err == nil {
+			_ = os.MkdirAll(dir, 0o755)
+			loc, locErr := time.LoadLocation("America/New_York")
+			if locErr != nil {
+				loc = time.FixedZone("EST", -5*60*60)
+			}
+			stamp := time.Now().In(loc).Format("2006-01-02T150405MST")
+			path := filepath.Join(dir, stamp+"_no-thread.jsonl")
+			if f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
+				l.f = f
+				l.path = path
+				for _, line := range l.buf {
+					_, _ = l.f.Write(line)
+				}
+				l.buf = nil
+			}
+		}
+	}
+
+	if l.f != nil {
+		_ = l.f.Sync()
+		_ = l.f.Close()
+		l.f = nil
+	}
 }
 
 // --- shared stdin (main loop + approval prompts) ---
@@ -257,6 +454,7 @@ type appServer struct {
 	stdin     io.WriteCloser
 	stdout    *bufio.Reader
 	userStdin *stdinReader
+	log       *sessionLogger
 
 	mu       sync.Mutex
 	nextID   atomic.Int64
@@ -283,7 +481,7 @@ type wireMessage struct {
 	Error  *rpcError       `json:"error"`
 }
 
-func startAppServer(ctx context.Context, userStdin *stdinReader) (*appServer, error) {
+func startAppServer(ctx context.Context, userStdin *stdinReader, slog *sessionLogger) (*appServer, error) {
 	bin, err := exec.LookPath("codex")
 	if err != nil {
 		return nil, fmt.Errorf("codex not on PATH: %w", err)
@@ -312,6 +510,7 @@ func startAppServer(ctx context.Context, userStdin *stdinReader) (*appServer, er
 		stdin:     stdin,
 		stdout:    bufio.NewReaderSize(stdoutPipe, 1024*1024),
 		userStdin: userStdin,
+		log:       slog,
 		pending:   make(map[int64]chan rpcResponse),
 	}
 	go c.readLoop()
@@ -357,6 +556,7 @@ func (c *appServer) readLoop() {
 			fmt.Fprintf(os.Stderr, "tui: bad json from app-server: %v\n", err)
 			continue
 		}
+		c.log.Record("in", json.RawMessage(append([]byte(nil), line...)))
 
 		if len(msg.ID) > 0 && msg.Method == "" {
 			c.deliverResponse(msg)
@@ -418,6 +618,7 @@ func (c *appServer) writeJSON(v any) error {
 	if err != nil {
 		return err
 	}
+	c.log.Record("out", json.RawMessage(append([]byte(nil), data...)))
 	data = append(data, '\n')
 	_, err = c.stdin.Write(data)
 	return err

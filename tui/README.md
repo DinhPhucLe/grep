@@ -58,6 +58,9 @@ Use those schemas as the source of truth for methods, params, and item shapes wh
 
 ```bash
 go run ./tui
+go run ./tui --log                              # write tui/log/{EasternTime}_{threadId}.jsonl
+go run ./tui --view                             # pretty-print newest log
+go run ./tui --view tui/log/some-session.jsonl  # pretty-print a specific log
 ```
 
-Requires `codex` on `PATH`. Type a message and press Enter; `/quit` or Ctrl+C to exit. When the agent needs approval, answer `y` / `n`.
+Requires `codex` on `PATH`. Type a message and press Enter; `/quit` or Ctrl+C to exit. When the agent needs approval, answer `y` / `n`. With `--log`, every inbound and outbound RPC line is appended once (handshake buffered until the thread id exists, then flushed into the named file). `--view` prints each event with Eastern timestamps, direction, a one-line RPC summary, and indented JSON.
