@@ -10,10 +10,9 @@ import (
 	"strings"
 )
 
-func (m *model) requestPageSize() int { return max(1, min(8, m.height-10)) }
 func (m *model) requestView() string {
 	r := m.requests[0]
-	w := max(1, m.width-4)
+	w := max(1, m.width-m.borderRows()-2)
 	title := "Input required"
 	details := ""
 	choice := ""
@@ -60,23 +59,42 @@ func (m *model) requestView() string {
 	r.horizontal = min(r.horizontal, r.maxHorizontal)
 	r.barWidth = w
 	r.barRow = -1
-	pageSize := m.requestPageSize()
-	if r.maxHorizontal > 0 {
-		pageSize = max(1, pageSize-1)
+	budget := m.requestBudget()
+	if budget == 1 && inputPrefix != "" {
+		r.input.Width = max(1, w-ansi.StringWidth(inputPrefix)-ansi.StringWidth(r.input.Prompt)-1)
+		return ansi.Truncate(inputPrefix+r.input.View(), w, "")
 	}
-	showChoices := len(r.questions) == 0 && m.height >= 18
+	titleRows := 0
+	if budget >= 3 {
+		titleRows = 1
+	}
+	choiceRows := 1
+	showChoices := len(r.questions) == 0 && budget >= 10
 	if showChoices {
-		pageSize = max(1, pageSize-min(len(r.choices), 5)+1)
+		choiceRows = min(5, len(r.choices))
 	}
+	barRows := 0
+	if r.maxHorizontal > 0 && budget >= 4 {
+		barRows = 1
+	}
+	inputRows := 0
 	if inputPrefix != "" {
-		pageSize = max(1, pageSize-1)
+		inputRows = 1
 	}
+	hintRows := 0
+	if budget >= 8 {
+		hintRows = 1
+	}
+	pageSize := max(0, budget-titleRows-choiceRows-barRows-inputRows-hintRows)
 	start := min(r.detailOffset, max(0, len(detailLines)-1))
-	lines := []string{m.accent(title, "3")}
+	var lines []string
+	if titleRows > 0 {
+		lines = append(lines, m.accent(title, "3"))
+	}
 	for _, line := range detailLines[start:min(len(detailLines), start+pageSize)] {
 		lines = append(lines, horizontalSlice(line, r.horizontal, w))
 	}
-	if len(detailLines) > pageSize && m.height >= 12 {
+	if len(detailLines) > pageSize && hintRows > 0 {
 		lines = append(lines, fmt.Sprintf("Ctrl+N/P details (%d/%d)", start+1, len(detailLines)))
 	}
 	if showChoices {
@@ -99,7 +117,7 @@ func (m *model) requestView() string {
 		r.input.Width = max(1, w-ansi.StringWidth(inputPrefix)-ansi.StringWidth(r.input.Prompt)-1)
 		lines = append(lines, inputPrefix+r.input.View())
 	}
-	if r.maxHorizontal > 0 {
+	if barRows > 0 {
 		r.barRow = len(lines)
 		track := max(1, w-2)
 		thumb := max(1, track*w/(w+r.maxHorizontal))

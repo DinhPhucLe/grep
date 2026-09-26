@@ -37,6 +37,8 @@ type model struct {
 	seenRequests                              map[string]bool
 	connectionLost                            bool
 	revealFocus                               bool
+	showHelp                                  bool
+	helpOffset                                int
 }
 type frameMsg time.Time
 type readyMsg struct {
@@ -96,6 +98,11 @@ func (m *model) call(method string, p any) tea.Cmd {
 	}
 }
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	_, cmd := m.update(msg)
+	m.resize()
+	return m, cmd
+}
+func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case rpcBatch:
 		var cmds []tea.Cmd
@@ -158,6 +165,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tick()
 	case tea.MouseMsg:
+		if m.showHelp {
+			if v.Button == tea.MouseButtonWheelUp {
+				m.helpOffset = max(0, m.helpOffset-3)
+			} else if v.Button == tea.MouseButtonWheelDown {
+				m.helpOffset += 3
+			}
+			return m, nil
+		}
 		if len(m.requests) > 0 {
 			m.requestMouse(v)
 			return m, nil
@@ -175,6 +190,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if v.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.showHelp {
+			m.helpKey(v)
+			return m, nil
+		}
+		if v.String() == "f1" {
+			m.showHelp = true
+			m.helpOffset = 0
+			return m, nil
 		}
 		if len(m.requests) > 0 {
 			return m, m.requestKey(v)

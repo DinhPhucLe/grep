@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"path/filepath"
+
 	"strings"
 	"unicode"
 )
@@ -147,86 +147,6 @@ func (m *model) refresh() {
 	}
 	m.dirty = false
 }
-func (m *model) resize() {
-	m.draft.SetWidth(max(1, m.width-4))
-	lines := 1
-	for _, line := range strings.Split(m.draft.Value(), "\n") {
-		lines += max(1, (ansi.StringWidth(line)+max(1, m.width-4)-1)/max(1, m.width-4))
-	}
-	m.draft.SetHeight(min(6, max(1, lines-1)))
-	m.viewport.Width = m.width
-	bottom := lipgloss.Height(m.bottom())
-	m.viewport.Height = max(1, m.height-bottom-3)
-	if m.follow {
-		m.viewport.GotoBottom()
-	}
-}
-func (m *model) bottom() string {
-	status := safeText(m.status)
-	if status == "Ready" {
-		status = ""
-	}
-	if len(m.requests) > 0 {
-		status = "Codex is waiting for your choice"
-	}
-	if m.busy && len(m.requests) == 0 {
-		if !m.opts.ReducedMotion {
-			status = string([]rune("◐◓◑◒")[(m.frame/3)%4]) + " " + status
-		}
-		status += " · drafting allowed; send after turn"
-	}
-	if m.newOutput {
-		if status == "" {
-			status = "New output below"
-		} else {
-			status = "New output below · " + status
-		}
-	}
-	footer := "Wheel/PgUp/PgDn scroll · Ctrl+End latest · Enter send · Alt+Enter newline"
-	if m.focus != -1 {
-		footer = "Wheel/↑↓/PgUp/PgDn scroll · End latest · Tab focus · Enter expand"
-	}
-	input := m.draft.View()
-	if len(m.requests) > 0 {
-		input = m.requestView()
-		footer = "↑↓ choose · Enter confirm · ←→ scroll · Ctrl+D details"
-		if len(m.requests[0].questions) > 0 {
-			footer = "↑↓ choose · Enter answer · Ctrl+N/P read more"
-		}
-	}
-	border := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Width(max(1, m.width-2))
-	if !m.opts.NoColor {
-		border = border.BorderForeground(lipgloss.Color("8"))
-		if m.focus == -1 && len(m.requests) == 0 {
-			border = border.BorderForeground(lipgloss.Color("6"))
-		}
-	}
-	return ansi.Truncate(status, m.width, "") + "\n" + border.Render(input) + "\n" + m.shortcutStyle(ansi.Truncate(footer, m.width, ""))
-}
-func (m *model) View() string {
-	conn := "connecting"
-	if m.connected {
-		conn = "connected"
-	} else if strings.HasPrefix(m.status, "Disconnected") || strings.HasPrefix(m.status, "Failed") {
-		conn = "offline"
-	}
-	header := "Cortisol · " + filepath.Base(m.workspace) + " · " + conn
-	if m.width < 45 {
-		header = "Cortisol · " + conn
-	}
-	bottom := m.bottom()
-	if len(m.requests) > 0 {
-		m.requests[0].barY = m.viewport.Height + 4 + m.requests[0].barRow
-		if m.height < 12 {
-			m.requests[0].barY = 3 + m.requests[0].barRow
-		}
-	}
-	if m.height < 12 {
-		return fitScreen(m.accent(header, "13")+"\n"+bottom, m.width, m.height)
-	}
-	return fitScreen(m.accent(ansi.Truncate(header, m.width, ""), "13")+"\n\n"+m.viewport.View()+"\n"+bottom, m.width, m.height)
-}
-
 func fileChangeLabel(i *conversationItem) string {
 	var changes []struct {
 		Path string
