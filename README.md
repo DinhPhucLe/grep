@@ -46,6 +46,10 @@ validate migration files without connecting to MongoDB, run
 
 ### 3. Run the HTTP server
 
+Before starting, add the Snowflake account URL, PAT, and model to `server/.env`
+using the [Cortex setup guide](server/docs/snowflake.md). The server requires
+these settings to evaluate prompts.
+
 In a terminal from the `server/` directory:
 
 ```bash
@@ -73,3 +77,10 @@ The TUI starts `codex app-server` and uses its JSON-RPC stdio interface. Make
 sure the Codex CLI is installed, authenticated, and available on `PATH`.
 Type a message and press Enter; use `/quit` or Ctrl+C to exit. For TUI logging
 and protocol details, see [`tui/README.md`](tui/README.md).
+## Snowflake Cortex evaluations
+
+The HTTP backend requires Snowflake Cortex configuration alongside MongoDB.
+Follow [the Cortex setup guide](server/docs/snowflake.md) to create a token,
+configure `server/.env`, apply the evaluation migration, and send a payload to
+`POST /evaluations`. Requests are evaluated for consequential prompt ambiguity;
+the structured result is saved in MongoDB and returned to the caller.
