@@ -163,6 +163,9 @@ func (m *model) resize() {
 }
 func (m *model) bottom() string {
 	status := safeText(m.status)
+	if status == "Ready" {
+		status = ""
+	}
 	if len(m.requests) > 0 {
 		status = "Codex is waiting for your choice"
 	}
@@ -173,13 +176,17 @@ func (m *model) bottom() string {
 		status += " · drafting allowed; send after turn"
 	}
 	if m.newOutput {
-		status = "New output below · " + status
+		if status == "" {
+			status = "New output below"
+		} else {
+			status = "New output below · " + status
+		}
 	}
 	footer := "Wheel/PgUp/PgDn scroll · Ctrl+End latest · Enter send · Alt+Enter newline"
 	if m.focus != -1 {
 		footer = "Wheel/↑↓/PgUp/PgDn scroll · End latest · Tab focus · Enter expand"
 	}
-	input := m.role(true) + "\n" + m.draft.View()
+	input := m.draft.View()
 	if len(m.requests) > 0 {
 		input = m.requestView()
 		footer = "↑↓ choose · Enter confirm · ←→ scroll · Ctrl+D details"
@@ -187,9 +194,12 @@ func (m *model) bottom() string {
 			footer = "↑↓ choose · Enter answer · Ctrl+N/P read more"
 		}
 	}
-	border := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Width(max(1, m.width-2))
+	border := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Width(max(1, m.width-2))
 	if !m.opts.NoColor {
 		border = border.BorderForeground(lipgloss.Color("8"))
+		if m.focus == -1 && len(m.requests) == 0 {
+			border = border.BorderForeground(lipgloss.Color("6"))
+		}
 	}
 	return ansi.Truncate(status, m.width, "") + "\n" + border.Render(input) + "\n" + m.shortcutStyle(ansi.Truncate(footer, m.width, ""))
 }

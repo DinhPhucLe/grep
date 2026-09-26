@@ -53,7 +53,7 @@ func newModel(c *appServer, cwd string, o uiOptions) *model {
 	d.ShowLineNumbers = false
 	d.Prompt = ""
 	d.CharLimit = 0
-	d.Placeholder = "Ask Codex…"
+	d.Placeholder = "Ask Codex..."
 	d.Focus()
 	d.SetHeight(1)
 	if o.ReducedMotion {
