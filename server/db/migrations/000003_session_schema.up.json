@@ -1,0 +1,57 @@
+[
+  {
+    "create": "sessions",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["_id", "project_id", "agent_model", "started_at", "ended_at", "branch", "status", "shell"],
+        "additionalProperties": false,
+        "properties": {
+          "_id": {
+            "bsonType": "objectId",
+            "description": "SESSION ID: MongoDB ObjectId."
+          },
+          "project_id": {
+            "bsonType": "objectId",
+            "description": "SESSION PROJECT: References projects._id; existence must be checked by the application."
+          },
+          "agent_model": {
+            "bsonType": "string",
+            "description": "AGENT MODEL: Model name stored directly rather than an agent reference."
+          },
+          "started_at": {
+            "bsonType": "date",
+            "description": "STARTED AT: Required BSON date supplied by the application."
+          },
+          "ended_at": {
+            "bsonType": ["date", "null"],
+            "description": "ENDED AT: BSON date when the session ends, or null while running."
+          },
+          "branch": {
+            "bsonType": "string",
+            "description": "BRANCH: Git branch associated with the session."
+          },
+          "status": {
+            "bsonType": "string",
+            "description": "STATUS: Session status; allowed values are managed by the application."
+          },
+          "shell": {
+            "bsonType": "string",
+            "description": "SHELL: Shell used to run the session."
+          }
+        }
+      }
+    },
+    "validationLevel": "strict",
+    "validationAction": "error"
+  },
+  {
+    "createIndexes": "sessions",
+    "indexes": [
+      {
+        "key": { "project_id": 1 },
+        "name": "sessions_by_project"
+      }
+    ]
+  }
+]
