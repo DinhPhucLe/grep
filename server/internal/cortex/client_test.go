@@ -12,6 +12,7 @@ import (
 )
 
 func TestComplete(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","required":["ambiguity_score"],"properties":{"ambiguity_score":{"type":"number"}}}`)
 	for _, tc := range []struct {
 		name   string
 		status int
@@ -43,7 +44,11 @@ func TestComplete(t *testing.T) {
 					MaxCompletionTokens int             `json:"max_completion_tokens"`
 					DeprecatedMaxTokens json.RawMessage `json:"max_tokens"`
 					ResponseFormat      struct {
-						Type string `json:"type"`
+						Type       string `json:"type"`
+						JSONSchema struct {
+							Name   string          `json:"name"`
+							Schema json.RawMessage `json:"schema"`
+						} `json:"json_schema"`
 					} `json:"response_format"`
 				}
 				if json.NewDecoder(r.Body).Decode(&payload) != nil || payload.Model != "test-model" || payload.ResponseFormat.Type != "json_schema" {
@@ -51,6 +56,9 @@ func TestComplete(t *testing.T) {
 				}
 				if payload.Temperature == nil || *payload.Temperature != 0 {
 					t.Error("expected temperature 0")
+				}
+				if payload.ResponseFormat.JSONSchema.Name != "prompt_evaluation" || string(payload.ResponseFormat.JSONSchema.Schema) != string(schema) {
+					t.Error("response_format.json_schema must preserve the supplied ambiguity score schema")
 				}
 				if payload.MaxCompletionTokens != maxCompletionTokens || payload.DeprecatedMaxTokens != nil {
 					t.Error("expected max_completion_tokens only; Snowflake rejects max_tokens")
@@ -64,7 +72,7 @@ func TestComplete(t *testing.T) {
 				t.Fatal(err)
 			}
 			client.http.Transport = server.Client().Transport
-			got, err := client.Complete(context.Background(), "rubric", "input", json.RawMessage(`{"type":"object"}`))
+			got, err := client.Complete(context.Background(), "rubric", "input", schema)
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("got %v, want %v", err, tc.want)
 			}

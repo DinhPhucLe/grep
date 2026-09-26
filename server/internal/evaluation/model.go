@@ -44,13 +44,14 @@ type Gap struct {
 }
 
 type Body struct {
-	Verdict string `json:"verdict" bson:"verdict"`
-	Summary string `json:"summary" bson:"summary"`
-	Gaps    []Gap  `json:"gaps" bson:"gaps"`
+	Verdict        string  `json:"verdict" bson:"verdict"`
+	Summary        string  `json:"summary" bson:"summary"`
+	AmbiguityScore float64 `json:"ambiguity_score" bson:"ambiguity_score"`
+	Gaps           []Gap   `json:"gaps" bson:"gaps"`
 }
 
 func (b Body) Validate() error {
-	if (b.Verdict != "clear" && b.Verdict != "ambiguous") || strings.TrimSpace(b.Summary) == "" || b.Gaps == nil || len(b.Gaps) > 10 {
+	if (b.Verdict != "clear" && b.Verdict != "ambiguous") || strings.TrimSpace(b.Summary) == "" || b.Gaps == nil || len(b.Gaps) > 10 || b.AmbiguityScore < 0 || b.AmbiguityScore > 1 {
 		return errors.New("invalid evaluation fields")
 	}
 	if (b.Verdict == "clear" && len(b.Gaps) != 0) || (b.Verdict == "ambiguous" && len(b.Gaps) == 0) {
