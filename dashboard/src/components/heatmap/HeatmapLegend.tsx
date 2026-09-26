@@ -12,7 +12,7 @@ export function HeatmapLegend() {
       {items.map((item) => (
         <Group key={item.label} gap={6} wrap="nowrap">
           <span className={`legend-swatch ${item.className}`} aria-hidden="true" />
-          <Text c="dimmed" fz="xs">
+          <Text className="secondary-text" fz="xs" tt="uppercase">
             {item.label}
           </Text>
         </Group>

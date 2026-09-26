@@ -11,7 +11,7 @@ export function HistogramMetricCard({ metric }: { metric: HistogramMetric }) {
         <Group gap="xs" align="baseline">
           <Text className="signal-value">{metric.display.primary}</Text>
           {metric.display.secondary ? (
-            <Text c="dimmed" fz="xs">
+            <Text className="secondary-text" fz="xs">
               {metric.display.secondary}
             </Text>
           ) : null}
@@ -25,8 +25,15 @@ export function HistogramMetricCard({ metric }: { metric: HistogramMetric }) {
           withTooltip
           gridAxis="y"
           tickLine="none"
+          gridColor={chartConfig.gridStroke}
+          textColor="#000000"
           yAxisProps={{ allowDecimals: false, width: 24 }}
-          barProps={{ radius: 4, isAnimationActive: false }}
+          barProps={{
+            radius: 0,
+            isAnimationActive: false,
+            stroke: chartConfig.barStroke,
+            strokeWidth: chartConfig.barStrokeWidth,
+          }}
           aria-label={`${metric.label} distribution`}
         />
       </Stack>

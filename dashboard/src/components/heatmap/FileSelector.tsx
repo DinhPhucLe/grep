@@ -21,8 +21,9 @@ export function FileSelector({ files, selectedPath, onSelect }: FileSelectorProp
               role="tab"
               aria-selected={selected}
               title={file.path}
-              variant={selected ? 'light' : 'subtle'}
-              color={selected ? 'cyan' : 'gray'}
+              className="file-selector-btn"
+              data-selected={selected}
+              variant="default"
               size="compact-sm"
               onClick={() => onSelect(file.path)}
             >

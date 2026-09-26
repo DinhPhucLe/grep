@@ -1,9 +1,7 @@
-import { Group, RingProgress, Stack, Text, ThemeIcon } from '@mantine/core';
+import { Group, RingProgress, Stack, Text } from '@mantine/core';
 import { chartConfig } from '../../config/charts';
 import type { RatioMetric } from '../../contracts/dashboard';
 import { MetricCardShell } from '../shared/MetricCardShell';
-
-const segmentColors = ['teal.6', 'red.6', 'gray.5'];
 
 export function RatioMetricCard({ metric }: { metric: RatioMetric }) {
   const { visualization } = metric;
@@ -18,14 +16,14 @@ export function RatioMetricCard({ metric }: { metric: RatioMetric }) {
         <RingProgress
           size={chartConfig.ratioSize}
           thickness={chartConfig.ratioThickness}
-          roundCaps
+          roundCaps={false}
           sections={[{ value: progress, color: chartConfig.ratioColor }]}
           label={
             <Stack gap={0} align="center">
-              <Text fw={750} fz="xl">
+              <Text fw={700} fz="xl">
                 {metric.display.primary}
               </Text>
-              <Text c="dimmed" fz="10px" tt="uppercase" fw={700}>
+              <Text className="secondary-text" fz="10px" tt="uppercase" fw={700}>
                 accepted
               </Text>
             </Stack>
@@ -35,13 +33,15 @@ export function RatioMetricCard({ metric }: { metric: RatioMetric }) {
         <Stack gap="xs" className="ratio-legend">
           {visualization.segments.map((segment, index) => (
             <Group key={segment.label} gap="xs" wrap="nowrap">
-              <ThemeIcon
-                size={10}
-                radius="xl"
-                color={segmentColors[index] ?? 'gray.5'}
+              <span
+                className="ratio-legend__swatch"
+                style={{
+                  backgroundColor:
+                    chartConfig.segmentColors[index] ?? chartConfig.segmentColors[2],
+                }}
                 aria-hidden="true"
               />
-              <Text fz="xs" c="dimmed" className="ratio-legend__label">
+              <Text fz="xs" className="ratio-legend__label secondary-text">
                 {segment.label}
               </Text>
               <Text fz="sm" fw={700} ml="auto">
@@ -50,7 +50,7 @@ export function RatioMetricCard({ metric }: { metric: RatioMetric }) {
             </Group>
           ))}
           {metric.display.secondary ? (
-            <Text fz="xs" c="dimmed" mt={2}>
+            <Text fz="xs" className="secondary-text" mt={2}>
               {metric.display.secondary}
             </Text>
           ) : null}

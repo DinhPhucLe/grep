@@ -1,15 +1,4 @@
-import {
-  ActionIcon,
-  Badge,
-  Group,
-  Paper,
-  Stack,
-  Text,
-  Title,
-  Tooltip,
-  useComputedColorScheme,
-  useMantineColorScheme,
-} from '@mantine/core';
+import { Badge, Group, Paper, Stack, Text, Title } from '@mantine/core';
 import type { DashboardSnapshot } from '../contracts/dashboard';
 
 interface DashboardHeaderProps {
@@ -26,12 +15,11 @@ const formatTime = (value: string) =>
   }).format(new Date(value));
 
 export function DashboardHeader({ session, generatedAt }: DashboardHeaderProps) {
-  const { setColorScheme } = useMantineColorScheme();
-  const colorScheme = useComputedColorScheme('dark');
-  const nextScheme = colorScheme === 'dark' ? 'light' : 'dark';
+  const sessionBadgeClass =
+    session.state === 'active' ? 'status-badge status-badge--active' : 'status-badge status-badge--idle';
 
   return (
-    <Paper className="dashboard-header" p={{ base: 'lg', sm: 'xl' }} radius="xl" withBorder>
+    <Paper className="dashboard-header" p={{ base: 'lg', sm: 'xl' }} radius={0} withBorder>
       <Group justify="space-between" align="flex-start" gap="lg">
         <Stack gap="xs">
           <Group gap="sm">
@@ -40,38 +28,29 @@ export function DashboardHeader({ session, generatedAt }: DashboardHeaderProps) 
             </div>
             <div>
               <Text className="eyebrow">Vibe Coding Observatory</Text>
-              <Title order={1}>Session evidence</Title>
+              <Title order={1} className="section-title">
+                Session evidence
+              </Title>
             </div>
           </Group>
           <Group gap="xs" mt="xs">
-            <Badge color="orange" variant="light">
+            <Badge className="status-badge status-badge--mock" variant="filled">
               Mock data
             </Badge>
-            <Badge color={session.state === 'active' ? 'teal' : 'gray'} variant="dot">
+            <Badge className={sessionBadgeClass} variant="filled">
               {session.state}
             </Badge>
-            <Text c="dimmed" fz="xs">
+            <Text className="secondary-text" fz="xs">
               {session.id}
             </Text>
           </Group>
         </Stack>
 
         <Stack gap="xs" align="flex-end">
-          <Tooltip label={`Switch to ${nextScheme} mode`}>
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              size="lg"
-              aria-label={`Switch to ${nextScheme} mode`}
-              onClick={() => setColorScheme(nextScheme)}
-            >
-              <span aria-hidden="true">{colorScheme === 'dark' ? '☀' : '☾'}</span>
-            </ActionIcon>
-          </Tooltip>
-          <Text c="dimmed" fz="xs">
+          <Text className="secondary-text" fz="xs">
             Observed through {formatTime(session.observedThrough)}
           </Text>
-          <Text c="dimmed" fz="xs">
+          <Text className="secondary-text" fz="xs">
             Snapshot {formatTime(generatedAt)}
           </Text>
         </Stack>

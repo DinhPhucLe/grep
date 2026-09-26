@@ -22,7 +22,7 @@ export function DashboardPage({ snapshot }: { snapshot: DashboardSnapshot }) {
 
         <section aria-labelledby="signals-heading">
           <Text className="eyebrow">Significant metrics</Text>
-          <Title id="signals-heading" order={2} fz="xl" mt={4} mb="md">
+          <Title id="signals-heading" order={2} fz="xl" mt={4} mb="md" className="section-title">
             Observable session signals
           </Title>
           <SimpleGrid cols={dashboardLayout.significantColumns}>
@@ -39,7 +39,7 @@ export function DashboardPage({ snapshot }: { snapshot: DashboardSnapshot }) {
           <Grid.Col span={{ base: 12, lg: 7 }}>
             <section aria-labelledby="descriptive-heading">
               <Text className="eyebrow">Session context</Text>
-              <Title id="descriptive-heading" order={2} fz="xl" mt={4} mb="md">
+              <Title id="descriptive-heading" order={2} fz="xl" mt={4} mb="md" className="section-title">
                 Descriptive numbers
               </Title>
               <SimpleGrid cols={dashboardLayout.descriptiveColumns}>
@@ -53,7 +53,7 @@ export function DashboardPage({ snapshot }: { snapshot: DashboardSnapshot }) {
 
         <CodeHeatmap heatmap={snapshot.heatmap} />
 
-        <Text ta="center" c="dimmed" fz="xs" pb="md">
+        <Text ta="center" className="secondary-text" fz="xs" pb="md" tt="uppercase">
           Descriptive metrics and code-change evidence do not update a cortisol signal.
         </Text>
       </Stack>

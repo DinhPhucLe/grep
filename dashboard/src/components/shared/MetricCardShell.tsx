@@ -15,19 +15,21 @@ export function MetricCardShell({
   const statusLabel = metric.status.replace('_', ' ');
 
   return (
-    <Paper className={className} p="lg" radius="lg" withBorder>
+    <Paper className={className} p="lg" radius={0} withBorder>
       <Stack gap="md" h="100%">
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <div>
-            <Text fw={650}>{metric.label}</Text>
+            <Text fw={700} tt="uppercase" style={{ letterSpacing: '1px' }}>
+              {metric.label}
+            </Text>
             {metric.description ? (
-              <Text c="dimmed" fz="xs" mt={3} lh={1.45}>
+              <Text className="secondary-text" fz="xs" mt={3} lh={1.45}>
                 {metric.description}
               </Text>
             ) : null}
           </div>
           {metric.status !== 'available' ? (
-            <Badge color="gray" variant="light" size="xs">
+            <Badge className="status-badge status-badge--unavailable" variant="filled" size="xs">
               {statusLabel}
             </Badge>
           ) : null}

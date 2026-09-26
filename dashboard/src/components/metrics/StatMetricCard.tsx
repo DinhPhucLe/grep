@@ -8,7 +8,7 @@ export function StatMetricCard({ metric }: { metric: StatMetric }) {
       <Stack gap={2} mt="auto">
         <Text className="stat-card__value">{metric.display.primary}</Text>
         {metric.display.secondary ? (
-          <Text c="dimmed" fz="xs">
+          <Text className="secondary-text" fz="xs">
             {metric.display.secondary}
           </Text>
         ) : null}

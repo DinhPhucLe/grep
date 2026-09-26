@@ -18,20 +18,23 @@ export function CodeHeatmap({ heatmap }: { heatmap: CodeHeatmapModel }) {
     [heatmap.files, selectedPath],
   );
 
+  const modeBadgeClass =
+    heatmap.mode === 'history' ? 'status-badge status-badge--history' : 'status-badge status-badge--idle';
+
   return (
-    <Paper className="heatmap-panel" radius="xl" withBorder>
+    <Paper className="heatmap-panel" radius={0} withBorder>
       <Stack gap={0}>
         <Group className="heatmap-panel__header" justify="space-between" align="flex-start">
           <div>
             <Text className="eyebrow">Code-change evidence</Text>
-            <Title order={2} fz="xl" mt={4}>
+            <Title order={2} fz="xl" mt={4} className="section-title">
               Session line heatmap
             </Title>
-            <Text c="dimmed" fz="sm" mt={6}>
+            <Text className="secondary-text" fz="sm" mt={6}>
               Retained changes and deletion/replacement churn observed during this session.
             </Text>
           </div>
-          <Badge color={heatmap.mode === 'history' ? 'cyan' : 'gray'} variant="light">
+          <Badge className={modeBadgeClass} variant="filled">
             {heatmap.mode === 'history' ? 'Session history' : 'Final diff only'}
           </Badge>
         </Group>
@@ -88,7 +91,7 @@ export function CodeHeatmap({ heatmap }: { heatmap: CodeHeatmapModel }) {
             </div>
           </div>
         ) : (
-          <Text p="xl" c="dimmed">
+          <Text p="xl" className="secondary-text">
             No changed files were supplied.
           </Text>
         )}

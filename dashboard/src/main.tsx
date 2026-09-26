@@ -13,7 +13,7 @@ const root = createRoot(document.getElementById('root')!);
 function render(content: React.ReactNode) {
   root.render(
     <StrictMode>
-      <MantineProvider theme={dashboardTheme} defaultColorScheme="auto">
+      <MantineProvider theme={dashboardTheme} forceColorScheme="light">
         {content}
       </MantineProvider>
     </StrictMode>,
