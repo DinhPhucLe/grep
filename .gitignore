@@ -212,6 +212,11 @@ dashboard/*.tsbuildinfo
 # Go CLI build artifacts and local toolchain caches
 cli/bin/
 cli/coverage.out
+# Codex app-server generated API schemas (local regenerate)
+schemas/
+
+# TUI session debug logs
+tui/log/
 
 # Ruff stuff:
 .ruff_cache/
