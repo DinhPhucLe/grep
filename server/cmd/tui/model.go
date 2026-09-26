@@ -12,7 +12,10 @@ import (
 	"time"
 )
 
-type uiOptions struct{ NoIcons, ReducedMotion, NoColor bool }
+type uiOptions struct {
+	NoIcons, ReducedMotion, NoColor bool
+	EvaluationServer                string
+}
 type conversationItem struct {
 	key, kind, raw, status, command, output string
 	done, expanded                          bool
@@ -44,6 +47,10 @@ type model struct {
 	clipboardNotice, quitDraft                string
 	quitMode                                  bool
 	pendingPastes                             int
+	evaluating                                bool
+	evaluationSequence                        int
+	cancelEvaluation                          context.CancelFunc
+	lastEvaluation                            *promptEvaluation
 }
 type frameMsg time.Time
 type terminalSizeMsg struct{ width, height int }
@@ -111,6 +118,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case evaluationDoneMsg:
+		return m, m.finishEvaluation(v)
 	case clipboardResult:
 		if !v.copied {
 			m.pendingPastes = max(0, m.pendingPastes-1)
@@ -161,6 +170,7 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Ready"
 		}
 	case disconnectedMsg:
+		m.stopEvaluation()
 		m.connectionLost = true
 		m.connected = false
 		m.busy = false
@@ -352,6 +362,12 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case "esc":
+			if m.evaluating {
+				m.stopEvaluation()
+				m.busy = false
+				m.status = "Evaluation canceled — Enter to retry"
+				return m, nil
+			}
 			if m.busy && m.turnID != "" {
 				m.status = "Interrupt requested"
 				return m, m.call("turn/interrupt", map[string]any{"threadId": m.threadID, "turnId": m.turnID})
@@ -379,16 +395,14 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.busy || !m.connected || strings.TrimSpace(text) == "" {
 				return m, nil
 			}
-			m.items = append(m.items, &conversationItem{kind: "userMessage", raw: text, done: true})
-			m.draft.Reset()
 			m.busy = true
 			m.turnID = ""
-			m.status = "Waiting for response"
+			m.status = "Evaluating prompt…"
 			m.follow = true
 			m.dirty = true
 			m.resize()
 			m.refresh()
-			return m, m.call("turn/start", map[string]any{"threadId": m.threadID, "input": []map[string]any{{"type": "text", "text": text}}})
+			return m, m.evaluatePrompt(text)
 		}
 		if m.focus == -1 {
 			var cmd tea.Cmd

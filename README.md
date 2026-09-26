@@ -4,8 +4,8 @@
 
 The development setup has three parts: a MongoDB database, the Go HTTP server,
 and the Go TUI. Configure the database first, then run the server and TUI in
-separate terminals. The TUI currently talks directly to `codex app-server`;
-it does not connect to the Go HTTP server.
+separate terminals. The TUI evaluates each prompt through the Go HTTP server
+before sending the original text to `codex app-server`.
 
 For team Snowflake access, follow the [Snowflake local development setup](#snowflake-local-development-setup) below.
 

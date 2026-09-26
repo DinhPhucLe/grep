@@ -18,6 +18,7 @@ func main() {
 	icons := flag.Bool("no-icons", false, "use plain role labels")
 	motion := flag.Bool("reduced-motion", false, "disable animated status and cursor")
 	noColor := flag.Bool("no-color", os.Getenv("NO_COLOR") != "", "disable color and text styling")
+	evaluationServer := flag.String("evaluation-server", "http://127.0.0.1:8080", "Go evaluation API base URL")
 	flag.Parse()
 	if *viewFlag {
 		if err := viewSessionLog(flag.Arg(0)); err != nil {
@@ -33,7 +34,7 @@ func main() {
 		// Windows terminals may omit TERM even though styling is supported.
 		lipgloss.SetColorProfile(termenv.ANSI256)
 	}
-	if err := run(*logFlag, uiOptions{NoIcons: *icons, ReducedMotion: *motion, NoColor: *noColor}); err != nil {
+	if err := run(*logFlag, uiOptions{NoIcons: *icons, ReducedMotion: *motion, NoColor: *noColor, EvaluationServer: *evaluationServer}); err != nil {
 		fmt.Fprintln(os.Stderr, "tui:", err)
 		os.Exit(1)
 	}

@@ -23,9 +23,10 @@ func TestEnterWhileClipboardPendingDoesNotSendPartialDraft(t *testing.T) {
 		t.Fatal("clipboard result submitted automatically")
 	}
 	_, send = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if send == nil || !m.busy || m.items[0].raw != "First word\nsecond line\n" {
-		t.Fatal("explicit Enter did not send full paste")
+	if send == nil || !m.busy || !m.evaluating || m.draft.Value() != "First word\nsecond line\n" {
+		t.Fatal("explicit Enter did not evaluate full paste")
 	}
+	m.stopEvaluation()
 }
 
 func TestTerminalPasteTargetsComposerAndKeepsFirstWord(t *testing.T) {

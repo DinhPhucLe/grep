@@ -30,7 +30,7 @@ It does **not** implement the agent loop or apply patches itself — app-server 
 1. **Start** — client spawns app-server and opens stdio.
 2. **Handshake** — `initialize` → server result → `initialized` notification.
 3. **Thread** — `thread/start` creates a session (cwd, sandbox, approval policy). Returns a `threadId`.
-4. **Turn** — each user message is `turn/start` on that thread with text input.
+4. **Evaluate and turn** — each user message first goes to the Go server's `POST /evaluations`; after success, the original text is sent via `turn/start` on that thread.
 5. **Items** — during a turn the server emits item notifications (deltas, completions) and may send **server requests** (e.g. `item/*/requestApproval`) that the client must answer.
 6. **Turn end** — `turn/completed` (or failed). Client returns to the prompt for the next turn.
 
@@ -72,6 +72,20 @@ go run ./tui --view tui/log/some-session.jsonl  # pretty-print a specific log
 ```
 
 Requires `codex` on `PATH`. The full-window conversation keeps a fixed composer, streams answers, formats Markdown, and shows expandable file-change summaries. Raw command activity is hidden from the conversation; transport logs still retain it. Enter sends while idle; you can draft during a turn. Alt+Enter inserts a newline. Bracketed multiline pastes remain one prompt.
+
+Start the Go HTTP server before submitting prompts. The evaluation API defaults
+to `http://127.0.0.1:8080`; override it with
+`go run ./cmd/tui --evaluation-server http://localhost:8080` from `server/`.
+Evaluation includes the original prompt and recent user/assistant conversation
+(up to 50 messages within the API text limit); repository file contents are not
+collected yet. Requests have a 75-second timeout. Failures keep the draft and
+do not start Codex; press Enter to retry. Esc cancels a pending evaluation.
+
+The TUI branches on the numeric score: `ambiguity_score > 0.3` marks the prompt
+as requiring a quiz; `<= 0.3` passes. An evaluation card shows the score and
+branch, with the summary available on expansion. Both branches currently send
+the unchanged prompt to Codex and display results normally. Quiz generation,
+code withholding/reveal, and points are placeholders, not implemented behavior.
 
 Scroll the conversation with the mouse wheel or Page Up / Page Down, including while an answer is streaming. Ctrl+Home jumps to the first message and Ctrl+End returns to the latest output from any focus. Scrolling up pauses following; new text displays `New output below`. Scrolling back to the bottom resumes following. Earlier messages stay in the conversation.
 
