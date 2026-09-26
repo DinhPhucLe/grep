@@ -48,6 +48,10 @@ validate migration files without connecting to MongoDB, run
 
 ### 3. Run the HTTP server
 
+Before starting, add the Snowflake account URL, PAT, and model to `server/.env`
+using the [Cortex setup guide](server/docs/snowflake.md). The server requires
+these settings to evaluate prompts.
+
 In a terminal from the `server/` directory:
 
 ```bash

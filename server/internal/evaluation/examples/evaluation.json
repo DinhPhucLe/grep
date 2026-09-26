@@ -1,0 +1,7 @@
+{
+  "input": "Fix login",
+  "context": "A Go HTTP API uses cookie sessions. Users report a login problem, but no reproduction steps or expected behavior have been provided.",
+  "conversation": [
+    { "role": "user", "content": "We need to investigate the authentication flow." }
+  ]
+}

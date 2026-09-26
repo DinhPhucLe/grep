@@ -1,71 +1,82 @@
+// Package jobs provides bounded in-process work admission and concurrency.
 package jobs
 
 import (
 	"context"
 	"errors"
-	"strings"
 )
 
 var ErrQueueFull = errors.New("job queue is full")
+var ErrClosed = errors.New("job queue is closed")
 
-type Result struct {
-	Output string `json:"output"`
+type outcome[R any] struct {
+	result R
+	err    error
 }
-
-type job struct {
+type job[T, R any] struct {
 	ctx   context.Context
-	input string
-	reply chan Result
+	input T
+	reply chan outcome[R]
+}
+type Queue[T, R any] struct {
+	jobs    chan job[T, R]
+	process func(context.Context, T) (R, error)
+	cancel  context.CancelFunc
+	ctx     context.Context
 }
 
-type Queue struct {
-	jobs chan job
-}
-
-// NewQueue starts workers that live for the lifetime of the server process.
-func NewQueue(workers, capacity int) *Queue {
-	if workers < 1 || capacity < 1 {
-		panic("workers and capacity must be positive")
+// NewQueue starts workers. Close cancels active work and releases waiters.
+// This queue is not durable.
+func NewQueue[T, R any](workers, capacity int, process func(context.Context, T) (R, error)) *Queue[T, R] {
+	if workers < 1 || capacity < 1 || process == nil {
+		panic("workers, capacity, and processor are required")
 	}
-	q := &Queue{jobs: make(chan job, capacity)}
+	ctx, cancel := context.WithCancel(context.Background())
+	q := &Queue[T, R]{jobs: make(chan job[T, R], capacity), process: process, cancel: cancel, ctx: ctx}
 	for i := 0; i < workers; i++ {
-		go q.worker()
+		go q.worker(ctx)
 	}
 	return q
 }
-
-// Submit queues work without waiting for space, then waits for its result.
-func (q *Queue) Submit(ctx context.Context, input string) (Result, error) {
+func (q *Queue[T, R]) Close() { q.cancel() }
+func (q *Queue[T, R]) Submit(ctx context.Context, input T) (R, error) {
+	var zero R
 	if err := ctx.Err(); err != nil {
-		return Result{}, err
+		return zero, err
 	}
-	j := job{ctx: ctx, input: input, reply: make(chan Result, 1)}
-
+	if q.ctx.Err() != nil {
+		return zero, ErrClosed
+	}
+	j := job[T, R]{ctx: ctx, input: input, reply: make(chan outcome[R], 1)}
 	select {
 	case q.jobs <- j:
-		// Job successfully queued.
 	default:
-		// Job queue is full.
-		return Result{}, ErrQueueFull
+		return zero, ErrQueueFull
 	}
-
 	select {
 	case result := <-j.reply:
-		// Job completed successfully.
-		return result, nil
+		return result.result, result.err
 	case <-ctx.Done():
-		// Context was done before job completed.
-		return Result{}, ctx.Err()
+		return zero, ctx.Err()
+	case <-q.ctx.Done():
+		return zero, ErrClosed
 	}
 }
-
-func (q *Queue) worker() {
-	for j := range q.jobs {
-		if j.ctx.Err() != nil {
-			// Skip jobs with canceled context.
-			continue
+func (q *Queue[T, R]) worker(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case j := <-q.jobs:
+			if j.ctx.Err() != nil {
+				continue
+			}
+			workCtx, cancel := context.WithCancel(j.ctx)
+			stop := context.AfterFunc(ctx, cancel)
+			result, err := q.process(workCtx, j.input)
+			stop()
+			cancel()
+			j.reply <- outcome[R]{result, err}
 		}
-		// Demo workload: replace this with the actual job processing.
-		j.reply <- Result{Output: strings.ToUpper(j.input)}
 	}
 }
