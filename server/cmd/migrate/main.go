@@ -21,7 +21,7 @@ func main() {
 func run() error {
 	// CONFIGURE FILE LOCATIONS RELATIVE TO THE CURRENT DIRECTORY
 	envFile := flag.String("env", ".env", "environment file to load")
-	directory := flag.String("path", "db/migrations", "directory containing JSON migration files")
+	directory := flag.String("path", "internal/db/migrations", "directory containing JSON migration files")
 	check := flag.Bool("check", false, "validate migration files without connecting to MongoDB")
 	flag.Parse()
 	if flag.NArg() != 0 {

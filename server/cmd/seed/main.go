@@ -9,8 +9,8 @@ import (
 	"os"
 	"time"
 
-	"cortisol-server/db/seed"
 	"cortisol-server/internal/db"
+	"cortisol-server/internal/db/seed"
 	"github.com/joho/godotenv"
 )
 
