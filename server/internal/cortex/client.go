@@ -41,6 +41,8 @@ func upstreamError(status int, body io.Reader) *UpstreamError {
 	return e
 }
 
+const maxCompletionTokens = 4096
+
 type Client struct {
 	config Config
 	http   *http.Client
@@ -58,9 +60,10 @@ func (c *Client) Complete(ctx context.Context, system, input string, schema json
 		Model               string              `json:"model"`
 		Messages            []map[string]string `json:"messages"`
 		Stream              bool                `json:"stream"`
+		Temperature         float64             `json:"temperature"`
 		MaxCompletionTokens int                 `json:"max_completion_tokens"`
 		ResponseFormat      any                 `json:"response_format"`
-	}{c.config.Model, []map[string]string{{"role": "system", "content": system}, {"role": "user", "content": input}}, false, 4096,
+	}{c.config.Model, []map[string]string{{"role": "system", "content": system}, {"role": "user", "content": input}}, false, 0, maxCompletionTokens,
 		map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "prompt_evaluation", "schema": schema}}}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -102,8 +105,8 @@ func (c *Client) Complete(ctx context.Context, system, input string, schema json
 		Choices []struct {
 			FinishReason string `json:"finish_reason"`
 			Message      struct {
-				Content string `json:"content"`
-				Refusal string `json:"refusal"`
+				Content json.RawMessage `json:"content"`
+				Refusal string          `json:"refusal"`
 			} `json:"message"`
 		} `json:"choices"`
 	}
@@ -112,11 +115,30 @@ func (c *Client) Complete(ctx context.Context, system, input string, schema json
 	}
 	choice := envelope.Choices[0]
 	// Snowflake can return an empty finish_reason for complete non-streaming
-	// Claude responses. Accept it only with valid JSON; the evaluation service
-	// still validates required fields and verdict consistency. Explicit length,
-	// refusal, tool-call, and other finish reasons remain rejected.
-	if (choice.FinishReason != "stop" && choice.FinishReason != "") || choice.Message.Refusal != "" || !json.Valid([]byte(choice.Message.Content)) {
+	// Claude responses. Accept it only with a JSON object string; the evaluation
+	// service still validates required fields and verdict consistency. Explicit
+	// length, refusal, tool-call, and other finish reasons remain rejected.
+	content, ok := jsonObjectContent(choice.Message.Content)
+	if (choice.FinishReason != "stop" && choice.FinishReason != "") || choice.Message.Refusal != "" || !ok {
 		return nil, ErrInvalidResponse
 	}
-	return json.RawMessage(choice.Message.Content), nil
+	return content, nil
+}
+
+// jsonObjectContent accepts OpenAI-style string content that decodes to a JSON
+// object. Non-string content (arrays/objects) and non-object JSON values fail.
+func jsonObjectContent(raw json.RawMessage) (json.RawMessage, bool) {
+	var content string
+	if json.Unmarshal(raw, &content) != nil {
+		return nil, false
+	}
+	content = strings.TrimSpace(content)
+	if content == "" || content[0] != '{' || !json.Valid([]byte(content)) {
+		return nil, false
+	}
+	var object map[string]json.RawMessage
+	if json.Unmarshal([]byte(content), &object) != nil {
+		return nil, false
+	}
+	return json.RawMessage(content), true
 }

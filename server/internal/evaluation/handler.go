@@ -54,10 +54,12 @@ func NewHandler(queue Submitter, timeout time.Duration) http.HandlerFunc {
 			writeError(w, 504, "evaluation_timeout", "evaluation timed out")
 		case errors.Is(err, context.Canceled):
 			return
-		case errors.Is(err, jobs.ErrQueueFull), errors.Is(err, jobs.ErrClosed):
+		case errors.Is(err, jobs.ErrQueueFull):
 			w.Header().Set("Retry-After", "1")
 			writeError(w, 503, "queue_full", "evaluation queue is full")
-		case errors.Is(err, cortex.ErrUpstream), errors.Is(err, cortex.ErrInvalidResponse):
+		case errors.Is(err, jobs.ErrClosed):
+			writeError(w, 503, "queue_unavailable", "evaluation queue is unavailable")
+		case errors.Is(err, cortex.ErrUpstream):
 			var upstream *cortex.UpstreamError
 			if errors.As(err, &upstream) {
 				log.Printf("Cortex upstream failure: HTTP %d, Snowflake code %s", upstream.Status, upstream.Code)
@@ -65,8 +67,13 @@ func NewHandler(queue Submitter, timeout time.Duration) http.HandlerFunc {
 					writeError(w, 502, "cortex_network_policy_required", "Snowflake requires a network policy for the PAT user; allow the server's public outbound IP")
 					return
 				}
+			} else {
+				log.Printf("Cortex upstream failure")
 			}
 			writeError(w, 502, "cortex_error", "Cortex could not produce a valid evaluation")
+		case errors.Is(err, cortex.ErrInvalidResponse):
+			log.Printf("Cortex invalid response")
+			writeError(w, 502, "cortex_invalid_response", "Cortex returned an invalid evaluation")
 		case err != nil:
 			writeError(w, 500, "evaluation_failed", "evaluation could not be completed")
 		default:

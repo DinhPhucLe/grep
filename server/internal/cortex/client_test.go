@@ -25,6 +25,9 @@ func TestComplete(t *testing.T) {
 		{"rate limit", 429, `secret provider details`, ErrUpstream},
 		{"truncated", 200, `{"choices":[{"finish_reason":"length","message":{"content":"{}"}}]}`, ErrInvalidResponse},
 		{"bad content", 200, `{"choices":[{"finish_reason":"stop","message":{"content":"not json"}}]}`, ErrInvalidResponse},
+		{"non object json", 200, `{"choices":[{"finish_reason":"stop","message":{"content":"null"}}]}`, ErrInvalidResponse},
+		{"array json", 200, `{"choices":[{"finish_reason":"stop","message":{"content":"[]"}}]}`, ErrInvalidResponse},
+		{"content parts array", 200, `{"choices":[{"finish_reason":"stop","message":{"content":[{"type":"text","text":"{}"}]}}]}`, ErrInvalidResponse},
 		{"no choices", 200, `{"choices":[]}`, ErrInvalidResponse},
 		{"bad envelope", 200, `not json`, ErrInvalidResponse},
 		{"refusal", 200, `{"choices":[{"finish_reason":"stop","message":{"content":"{}","refusal":"no"}}]}`, ErrInvalidResponse},
@@ -36,6 +39,7 @@ func TestComplete(t *testing.T) {
 				}
 				var payload struct {
 					Model               string          `json:"model"`
+					Temperature         *float64        `json:"temperature"`
 					MaxCompletionTokens int             `json:"max_completion_tokens"`
 					DeprecatedMaxTokens json.RawMessage `json:"max_tokens"`
 					ResponseFormat      struct {
@@ -45,7 +49,10 @@ func TestComplete(t *testing.T) {
 				if json.NewDecoder(r.Body).Decode(&payload) != nil || payload.Model != "test-model" || payload.ResponseFormat.Type != "json_schema" {
 					t.Error("missing model/schema")
 				}
-				if payload.MaxCompletionTokens != 4096 || payload.DeprecatedMaxTokens != nil {
+				if payload.Temperature == nil || *payload.Temperature != 0 {
+					t.Error("expected temperature 0")
+				}
+				if payload.MaxCompletionTokens != maxCompletionTokens || payload.DeprecatedMaxTokens != nil {
 					t.Error("expected max_completion_tokens only; Snowflake rejects max_tokens")
 				}
 				w.WriteHeader(tc.status)

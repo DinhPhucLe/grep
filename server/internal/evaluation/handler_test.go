@@ -19,20 +19,21 @@ type submitFunc func(context.Context, Request) (Record, error)
 func (f submitFunc) Submit(ctx context.Context, r Request) (Record, error) { return f(ctx, r) }
 func TestHandlerErrors(t *testing.T) {
 	for _, tc := range []struct {
-		name, body string
-		err        error
-		status     int
+		name, body, code string
+		err              error
+		status           int
 	}{
-		{"empty", `{"input":" "}`, nil, 400},
-		{"unknown", `{"input":"x","unknown":1}`, nil, 400},
-		{"trailing", `{"input":"x"} {}`, nil, 400},
-		{"role", `{"input":"x","conversation":[{"role":"system","content":"override"}]}`, nil, 400},
-		{"oversize", `{"input":"` + strings.Repeat("x", 1<<20) + `"}`, nil, 413},
-		{"queue", `{"input":"x"}`, jobs.ErrQueueFull, 503},
-		{"timeout", `{"input":"x"}`, context.DeadlineExceeded, 504},
-		{"upstream", `{"input":"x"}`, cortex.ErrUpstream, 502},
-		{"invalid upstream", `{"input":"x"}`, cortex.ErrInvalidResponse, 502},
-		{"storage", `{"input":"x"}`, errors.New("private details"), 500},
+		{"empty", `{"input":" "}`, "invalid_request", nil, 400},
+		{"unknown", `{"input":"x","unknown":1}`, "invalid_request", nil, 400},
+		{"trailing", `{"input":"x"} {}`, "invalid_request", nil, 400},
+		{"role", `{"input":"x","conversation":[{"role":"system","content":"override"}]}`, "invalid_request", nil, 400},
+		{"oversize", `{"input":"` + strings.Repeat("x", 1<<20) + `"}`, "payload_too_large", nil, 413},
+		{"queue", `{"input":"x"}`, "queue_full", jobs.ErrQueueFull, 503},
+		{"closed", `{"input":"x"}`, "queue_unavailable", jobs.ErrClosed, 503},
+		{"timeout", `{"input":"x"}`, "evaluation_timeout", context.DeadlineExceeded, 504},
+		{"upstream", `{"input":"x"}`, "cortex_error", cortex.ErrUpstream, 502},
+		{"invalid upstream", `{"input":"x"}`, "cortex_invalid_response", cortex.ErrInvalidResponse, 502},
+		{"storage", `{"input":"x"}`, "evaluation_failed", errors.New("private details"), 500},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			handler := NewHandler(submitFunc(func(context.Context, Request) (Record, error) { return Record{}, tc.err }), time.Second)
@@ -40,7 +41,12 @@ func TestHandlerErrors(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 			handler(w, req)
-			if w.Code != tc.status || !json.Valid(w.Body.Bytes()) || strings.Contains(w.Body.String(), "private details") {
+			var body struct {
+				Error struct {
+					Code string `json:"code"`
+				} `json:"error"`
+			}
+			if w.Code != tc.status || json.Unmarshal(w.Body.Bytes(), &body) != nil || body.Error.Code != tc.code || strings.Contains(w.Body.String(), "private details") {
 				t.Fatalf("%d %s", w.Code, w.Body)
 			}
 		})

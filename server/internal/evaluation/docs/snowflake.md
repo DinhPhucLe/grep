@@ -18,7 +18,7 @@ internal/evaluation/repository.go    MongoDB evaluations collection
 internal/evaluation/handler.go       HTTP request parsing and error mapping
 internal/jobs/queue.go               bounded, typed worker queue
 internal/db/migrations/000004_*      evaluations schema and timestamp index
-examples/evaluation.json             runnable request payload
+internal/evaluation/examples/evaluation.json  runnable request payload
 ```
 
 The evaluation contract implements the prompt-clarity step from `CONTEXT.md`.
@@ -116,7 +116,7 @@ From `server/` in another terminal:
 ```sh
 curl --fail-with-body http://127.0.0.1:8080/evaluations \
   -H 'Content-Type: application/json' \
-  --data-binary @examples/evaluation.json
+  --data-binary @internal/evaluation/examples/evaluation.json
 ```
 
 `POST /evaluations` accepts:
@@ -170,8 +170,8 @@ Errors have the shape `{"error":{"code":"...","message":"..."}}`:
 | 405 | Use POST |
 | 413 | HTTP body exceeds 1 MiB |
 | 415 | Content-Type must be application/json |
-| 502 | Cortex transport, permissions, rate limit, or invalid output error |
-| 503 | Queue full/unavailable; retry later |
+| 502 | Cortex transport/permissions (`cortex_error`), invalid model output (`cortex_invalid_response`), or network-policy auth failure |
+| 503 | Queue full (`queue_full`, retry later) or queue closed (`queue_unavailable`) |
 | 504 | Evaluation deadline exceeded |
 | 500 | Evaluation could not be saved or another internal error |
 
