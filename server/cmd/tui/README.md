@@ -56,6 +56,14 @@ Use those schemas as the source of truth for methods, params, and item shapes wh
 
 ### Run the test TUI
 
+On Windows, install Codex with `npm.cmd install -g @openai/codex`.
+The TUI launches npm installations through `node.exe`, so PowerShell script
+execution policy does not affect it. It also checks `%APPDATA%\npm` when an
+existing terminal has not picked up npm's PATH entry. Node.js must be on PATH.
+Native Codex executables on PATH are used directly.
+
+Run these commands from `server/cmd` (or use `go run ./cmd/tui` from `server`):
+
 ```bash
 go run ./tui
 go run ./tui --log                              # write tui/log/{EasternTime}_{threadId}.jsonl
@@ -63,4 +71,28 @@ go run ./tui --view                             # pretty-print newest log
 go run ./tui --view tui/log/some-session.jsonl  # pretty-print a specific log
 ```
 
-Requires `codex` on `PATH`. Type a message and press Enter; `/quit` or Ctrl+C to exit. When the agent needs approval, answer `y` / `n`. With `--log`, every inbound and outbound RPC line is appended once (handshake buffered until the thread id exists, then flushed into the named file). `--view` prints each event with Eastern timestamps, direction, a one-line RPC summary, and indented JSON.
+Requires `codex` on `PATH`. The full-window conversation keeps a fixed composer, streams answers, formats Markdown, and shows expandable file-change summaries. Raw command activity is hidden from the conversation; transport logs still retain it. Enter sends while idle; you can draft during a turn. Alt+Enter inserts a newline. Bracketed multiline pastes remain one prompt.
+
+Scroll the conversation with the mouse wheel or Page Up / Page Down, including while an answer is streaming. Ctrl+Home jumps to the first message and Ctrl+End returns to the latest output from any focus. Scrolling up pauses following; new text displays `New output below`. Scrolling back to the bottom resumes following. Earlier messages stay in the conversation.
+
+Tab / Shift+Tab move among the composer, history, and activity cards. Up / Down scroll one line when history or a card is focused; they continue to move the cursor when composing a prompt. Enter expands a focused card; End returns to the latest output. Esc clears a text selection first, or requests interruption when no selection is active. Type `/quit` (or `/exit`) and Enter to restore the terminal and exit, including while an approval is open. Ctrl+C copies text and does not quit.
+
+Click and drag over visible conversation text to select it, then press Ctrl+C to copy. Selection includes complete Unicode characters and omits terminal styling and display padding. Selected text stays stable while responses continue arriving; Esc, scrolling, resizing, or a new approval clears the selection. Clipboard success or errors appear in the footer.
+
+Press Ctrl+V or Insert to paste clipboard text into the composer or an editable server-input answer. Terminal-provided paste, including Shift+Insert where supported, is also accepted. Multiline composer pastes preserve line breaks and never submit automatically; press Enter to send. Clipboard access uses the operating system clipboard (Unix installations may require the clipboard tools supported by `atotto/clipboard`).
+
+Resizing reflows the transcript at word boundaries, for both streaming and completed answers. Words stay together unless a single token is wider than the available text area. Original message text and explicit newlines are retained.
+
+Short terminals keep a scrollable conversation and a compact input instead of hiding the transcript. The composer grows only within the available height. Decorative borders and the header disappear when space is tight, and approvals show fewer choices at once while preserving the selected action. Press F1 for the complete, scrollable shortcut list; use arrows, Page Up / Page Down, or the wheel to read it and F1 / Esc to return. Extremely small windows prioritize the active input or approval; message history remains available when space permits.
+
+Approval panels explain the requested action in plain English, using the server's file-read, file-listing, and search descriptions when supplied. Unrecognized commands show the actual command without guessing what it does. Choices use labels such as `Allow once`, `Don't allow`, `Allow for this conversation`, and `Stop this task`. Saved command/network rules are labeled separately. Selected choices use a contrasting highlight, and shortcut keys are emphasized. Long approval paths and choices have a horizontal scrollbar: use Left/Right, a horizontal mouse wheel, or click/drag the bar. Alt+Left/Right pans while entering text without taking over cursor editing. Ctrl+D toggles the full technical request; Ctrl+N / Ctrl+P scroll the explanation or details. When the server specifies available decisions, only those exact decisions are offered. A non-granting choice is selected first when available.
+
+Approval and input panels preserve the draft and keep receiving events. Tab / arrow keys select a choice; Enter confirms it. User-input questions support choices and free text; secret questions mask input. MCP elicitation accepts JSON form input or decline/cancel. Unsupported server requests receive a JSON-RPC method-not-found error rather than a fabricated approval response.
+
+Use `--no-icons` for plain role labels, `--reduced-motion` for static indicators, and `--no-color` (or `NO_COLOR=1`) to disable text styling. Streaming and completed answers render Markdown at every width, including bold, italic, headings, code, and links. Headings use terminal styling rather than a larger font size. Rendered buffers are cached until their text or width changes. Raw content is retained separately, and external terminal controls are removed before display.
+
+With `--log`, each inbound and outbound RPC occurrence is appended once, including repeated identical deltas. Handshake events are buffered until the thread ID is known. File names retain Eastern time and thread IDs; `--view` prints Eastern timestamps, direction, a summary, and indented JSON without spawning an agent or entering the interactive screen.
+
+The protocol was checked against schemas generated by `codex-cli 0.155.0-alpha.16.3`. UI state belongs to the Bubble Tea model; the RPC reader feeds a nonblocking queue, writes are serialized, and event batches are bounded to keep keyboard input responsive. Rendering is limited to 30 FPS, and completed Markdown is cached by width.
+
+Run `go test ./...` and `go vet ./...` from `server`. `go test -race ./...` additionally requires cgo and a supported C compiler. Automated checks cover reconciliation, interleaved items, approvals, server-input shapes, disconnects, multiline paste, Unicode widths, compact layouts, follow scrolling, repeated log events, and large responses. Live Windows PTY checks covered two successive turns, `--log`, `--view`, and clean exit. Unix terminal and race-detector runtime checks remain pending on an environment that supports them.

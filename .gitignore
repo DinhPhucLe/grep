@@ -216,7 +216,8 @@ cli/coverage.out
 schemas/
 
 # TUI session debug logs
-tui/log/
+**/tui/log/
+.superpowers/
 
 # Ruff stuff:
 .ruff_cache/
