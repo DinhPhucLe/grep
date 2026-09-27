@@ -1,0 +1,92 @@
+[
+  {
+    "id": "660000000000000000000001",
+    "content": "NovaPay payment retries: use exponential backoff with jitter on 429/503 from the card network. Cap at 5 attempts. Do not retry on 400 validation errors. See module payments/retry.go.",
+    "topics": ["payments", "retries", "novapay"],
+    "properties": {
+      "repo": "novapay-api",
+      "module": "payments",
+      "file_path": "internal/payments/retry.go",
+      "language": "go"
+    },
+    "authors": [{ "userId": "660000000000000000000101", "name": "Alex Rivera" }],
+    "createdAt": "2026-01-12T15:04:00Z",
+    "updatedAt": "2026-01-12T15:04:00Z",
+    "organizationId": "demo-org"
+  },
+  {
+    "id": "660000000000000000000002",
+    "content": "AtlasHealth FHIR patient search: always scope by organizationId before name match. Partial name queries must use case-insensitive collation. Never return cross-tenant IDs.",
+    "topics": ["fhir", "privacy", "atlashealth"],
+    "properties": {
+      "repo": "atlashealth-api",
+      "module": "patients",
+      "file_path": "internal/patients/search.go",
+      "language": "go"
+    },
+    "authors": [{ "userId": "660000000000000000000102", "name": "Sam Okonkwo" }],
+    "createdAt": "2026-02-03T09:20:00Z",
+    "updatedAt": "2026-02-03T09:20:00Z",
+    "organizationId": "demo-org"
+  },
+  {
+    "id": "660000000000000000000003",
+    "content": "Dashboard practice treemap intensity: root node intensity must stay 0 (neutral container). Sibling max drives leaf tiers 1-4. Palette: grey, mint, amber, light red, hard red.",
+    "topics": ["dashboard", "visualization", "practice"],
+    "properties": {
+      "repo": "cortisol-cli",
+      "module": "practice",
+      "file_path": "server/internal/practice/aggregate.go",
+      "language": "go"
+    },
+    "authors": [{ "userId": "660000000000000000000103", "name": "Jordan Lee" }],
+    "createdAt": "2026-03-18T18:45:00Z",
+    "updatedAt": "2026-03-18T18:45:00Z",
+    "organizationId": "demo-org"
+  },
+  {
+    "id": "660000000000000000000004",
+    "content": "Webhook signature verification for Stripe: compute HMAC-SHA256 over raw body with endpoint secret. Reject if timestamp skew > 5 minutes. Log mismatch without echoing the secret.",
+    "topics": ["webhooks", "security", "stripe"],
+    "properties": {
+      "repo": "novapay-api",
+      "module": "webhooks",
+      "file_path": "internal/webhooks/stripe.go",
+      "language": "go"
+    },
+    "authors": [{ "userId": "660000000000000000000101", "name": "Alex Rivera" }],
+    "createdAt": "2026-04-01T11:00:00Z",
+    "updatedAt": "2026-04-01T11:00:00Z",
+    "organizationId": "demo-org"
+  },
+  {
+    "id": "660000000000000000000005",
+    "content": "React Query staleTime for employee practice views: set 30s for calendar aggregates; invalidate on practice-event ingest success. Avoid refetchOnWindowFocus in dashboard kiosk mode.",
+    "topics": ["frontend", "caching", "dashboard"],
+    "properties": {
+      "repo": "cortisol-cli",
+      "module": "dashboard",
+      "file_path": "dashboard/src/hooks/usePractice.ts",
+      "language": "typescript"
+    },
+    "authors": [{ "userId": "660000000000000000000104", "name": "Priya Nair" }],
+    "createdAt": "2026-05-22T14:10:00Z",
+    "updatedAt": "2026-05-22T14:10:00Z",
+    "organizationId": "demo-org"
+  },
+  {
+    "id": "660000000000000000000006",
+    "content": "Mongo migration order: users → projects → sessions → evaluation → practice. Never skip 00000N when applying Atlas; run go run ./cmd/migrate from server/.",
+    "topics": ["mongodb", "migrations", "ops"],
+    "properties": {
+      "repo": "cortisol-cli",
+      "module": "db",
+      "file_path": "server/internal/db/migrate.go",
+      "language": "go"
+    },
+    "authors": [{ "userId": "660000000000000000000103", "name": "Jordan Lee" }],
+    "createdAt": "2026-06-08T08:30:00Z",
+    "updatedAt": "2026-06-08T08:30:00Z",
+    "organizationId": "demo-org"
+  }
+]

@@ -9,10 +9,25 @@
 **This repo’s TUI** (`go run ./tui`) is our own client of the same app-server. We spawn `codex app-server --listen stdio://`, speak the same protocol, and keep agentics on the server side.
 
 ```text
-  you  →  our TUI (render + I/O)  ↔  JSON-RPC/stdio  ↔  codex app-server (agent + tools)
+  you  →  our TUI (render + I/O)  ↔  JSON-RPC/stdio  ↔  codex app-server (agent + tools + MCP)
               ↑
          same role as Codex CLI
 ```
+
+**Setup guide:** [`docs/codex-mcp.md`](../../../docs/codex-mcp.md)
+
+To connect Codex to our MCP: open `~/.codex/config.toml` and paste:
+
+```toml
+[mcp_servers.cortisol]
+url = "http://127.0.0.1:3100/mcp"
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+enabled = true
+```
+
+MCP must be running (`cd mcp && npm run dev`). Then restart this TUI. Smoke
+test: ask the agent to call `quack`.
 
 ### Client responsibility
 

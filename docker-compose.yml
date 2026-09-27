@@ -1,0 +1,44 @@
+# Local / deploy packaging for the two HTTP services.
+# MongoDB Atlas is external — set MONGODB_URI (and related secrets) for `api`.
+
+services:
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./server/.env
+    environment:
+      HTTP_ADDR: ":8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  mcp:
+    build:
+      context: ./mcp
+      dockerfile: Dockerfile
+    ports:
+      - "3100:3100"
+    environment:
+      MCP_HTTP_ADDR: ":3100"
+      MCP_BACKEND: mock
+      CORTISOL_ORG_ID: ${CORTISOL_ORG_ID:-demo-org}
+      CORTISOL_MCP_ROOT: /app
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s

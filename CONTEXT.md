@@ -1,70 +1,208 @@
 # Cortisol CLI — Project context
 
-This document records the current product direction after the intervention pivot. It replaces the earlier passive observability and dashboard metric contract. Confirmed behavior is described below; unresolved product and implementation choices are marked **WIP**.
+This document records the current product direction and what exists in the
+repo today. Confirmed behavior is described below; planned work and open
+choices are marked **WIP**.
 
 ## 1. Purpose
 
-Cortisol CLI is a terminal interface for working with Codex that helps users notice the consequences of leaving coding instructions ambiguous. It intervenes in the workflow rather than merely monitoring it. The user works through our TUI, which remains a client of Codex app-server.
+Cortisol is becoming a **CLI-native knowledge-sharing medium for software
+engineers** in the same organization.
 
-The central experience is a contrast between **what the user intended** and **what Codex chose to implement** when the prompt left room for interpretation. For an ambiguous request, Codex is allowed to make its own implementation decisions. The product then draws attention to those decisions and asks the user to reason about them before revealing the relevant code. It does not silently improve the prompt or preselect the “right” interpretation for Codex.
+The core job: while someone is building, they can retrieve **attributed**
+technical knowledge created by teammates (name + insight + optional code
+locus), and they can leave verified knowledge behind for others. Wikis and
+chat sit outside the coding loop; Cortisol aims to put org memory where
+engineers already interrupt themselves to get unstuck (terminal / TUI).
 
-The goal is meaningful engagement with AI-generated code and with the instructions that led to it. A correct quiz answer or a high score is not proof that a user understands the entire implementation.
+That direction supersedes positioning Cortisol only as:
 
-## 2. Core user flow
+- a passive observability / “cortisol signal” dashboard, or
+- a product whose *headline* is codebase quizzing.
 
-1. The user enters a prompt in our TUI. The system evaluates its clarity in the context of the task, repository, and relevant prior conversation. A short follow-up can be sufficiently clear when earlier turns already established the requirements.
-2. **When the prompt is sufficiently clear:** the user earns points, and the TUI sends the prompt to Codex for normal execution.
-3. **When the prompt leaves consequential ambiguity:** Snowflake Cortex identifies the gaps. The user's original instructions are sent to Codex so its choices expose the consequences of those gaps.
-4. Codex generates an implementation. The TUI withholds selected, important implementation logic from the initial presentation, then asks questions about the decisions or behavior that the ambiguous prompt left open. The user gets up to **two attempts** to answer.
-5. Correct answers earn points. After two failed attempts, points are deducted. **The code is revealed either way** so the user can inspect Codex's choice and compare it with their intent.
-6. The user can continue the conversation, clarify the intended behavior, and ask Codex to revise the result. This subsequent prompt enters the same evaluation flow with relevant context.
+Quiz / practice (`lead_and_reveal`) remains part of the system as a
+**structured engagement and potential write path** into shared knowledge,
+not as the primary customer-facing story.
 
-For example, “fix login” might leave open whether the problem is an expired session, a bad password, or an error message. The learning moment is seeing which case Codex chose and whether it matches what the user meant. A question about an unrelated syntax detail would miss that purpose.
+### Product wedge (confirmed direction)
 
-The user remains in control of Codex execution and review. Existing Codex requests for approvals or other user decisions must still reach the user.
+1. **IC first** — unblock mid-task (“who already solved this?”) with author
+   attribution.
+2. **Org second** — dashboards and coverage / health views for managers once
+   usage exists.
+3. **Not day-one** — Slack ingest, 3D knowledge maps, and IDE autocomplete
+   with name chips are later; they need a working capture → search loop.
 
-## 3. What the intervention should test
+## 2. What exists today
 
-The ambiguity check concerns missing decisions that could materially change the result, not prompt length, tone, or a preference for verbose instructions. It must consider requirements and plans already established in the conversation.
+### 2.1 Go HTTP server (`server/`)
 
-Questions should connect a flagged gap to a consequential choice in Codex's actual implementation. They can ask the user to predict behavior, identify an assumption Codex made, or explain why the result may differ from their intent. The reveal then shows the relevant code and the consequence, including when the user answered incorrectly.
+- MongoDB-backed API (migrations, seed demo cast: NovaPay / AtlasHealth).
+- Prompt evaluation via Snowflake Cortex (clarity / ambiguity tooling used by
+  the intervention path).
+- **Practice events** ingest and aggregation:
+  - `POST /api/v1/practice-events`
+  - Employee and org practice dashboard GETs under `/api/v1/dashboard/...`
+  - Practice currently supported: `lead_and_reveal`
+- Directory search (people / org recommendations).
+- Practice views can surface **organization and user display names** when
+  looked up from Mongo (not raw IDs only in the UI).
 
-The exact clarity rubric, question format, answer evaluation criteria, treatment of partially correct answers, and handling of multiple ambiguities are **WIP**. Do not substitute simple prompt-length rules or treat an LLM judgment as a validated measure of understanding.
+### 2.2 Go TUI (`server/cmd/tui`)
 
-## 4. Architecture direction
+- Client of `codex app-server` over JSON-RPC via stdio.
+- Owns the intervention UX around Codex: prompt evaluation hooks, quiz /
+  reveal sequence, points feedback, approval surfacing.
+- Historically does **not** talk to the Go HTTP server for its Codex loop;
+  wiring TUI ↔ knowledge API is **WIP**.
 
-### 4.1 Codex wrapper
+### 2.3 Dashboard (`dashboard/`)
 
-The Go TUI remains a client of `codex app-server` over JSON-RPC via stdio. Codex app-server runs the coding agent and performs coding actions. Our TUI owns the user-facing intervention: prompt evaluation, explanation of ambiguous gaps, the quiz and reveal sequence, and points feedback. It sends user prompts as Codex turns, streams agent responses, renders conversation and code review, and surfaces Codex approval requests.
+- Presentation-only React app. Loads aggregates over HTTP; does not stream
+  from the CLI.
+- Session / heatmap views plus **employee and organization practice** pages
+  (calendar, outcomes, codebase treemaps, outcomes-over-time charts).
+- Practice viz polish: readable dates, truncated IDs, named subjects, dynamic
+  intensity tiers, denser mocks.
 
-The TUI does not reimplement Codex's coding agent loop. See the TUI protocol documentation for the current app-server integration. Existing code may still reflect the former product direction; this document defines the target scope rather than claiming the new flow is implemented.
+Authoritative API shapes: `API.md`, `dashboard/src/contracts/`.
 
-### 4.2 Snowflake Cortex
+## 3. Knowledge-sharing pivot (target)
 
-Snowflake Cortex is the planned LLM service for checking prompt clarity, identifying consequential gaps, generating questions, and evaluating answers. Codex generates and changes code. Structured LLM responses may help connect each question to a specific ambiguity and implementation choice, but the model, request format, output contract, and validation strategy are **WIP**.
+### 3.1 Meaningful CLI loop
 
-### 4.3 Withholding and revealing code
+A credible eng-knowledge product needs:
 
-The desired user experience temporarily withholds selected important logic before the quiz, then reveals it regardless of the outcome. **How to do this safely and credibly is WIP.** If Codex has already written code into the user's working tree, hiding text in the TUI does not hide the code. A genuine reveal sequence may require staging or isolating the generated changes until the review step. The system must not claim that code is hidden when it is already accessible on disk.
+1. **Write** — store a knowledge unit with author, org, topic, body, optional
+   repo/module/file.
+2. **Read** — query with filters + top‑k **vector search**, return results
+   with **person attribution**.
+3. **Schema** — one `knowledge_cards` (name TBD) model that both API and CLI
+   share.
 
-The criteria for selecting important logic and deciding what remains visible are also **WIP**. The user must ultimately be able to inspect the full result, including after two wrong answers.
+Without write + read, Slack, autocomplete, and graphs are empty.
 
-## 5. Points and longer-term rewards
+### 3.2 Near-term build budget
 
-The confirmed point events are:
+| Size | Scope | Status |
+|------|--------|--------|
+| **Medium** | HTTP MCP server with real tool schemas (`quack`, `knowledge_search`, `knowledge_post`) + mock knowledge backends; Docker packaging for Go API + MCP; Slack via official Slack MCP (docs/config only) | **Done** — see [`mcp/`](mcp/) and root [`docker-compose.yml`](docker-compose.yml) |
+| **Small** | Fixture knowledge corpus for demos | **Done** — [`mcp/fixtures/`](mcp/fixtures/) |
+| **Next (other / follow-on)** | Go `GET/POST /api/v1/knowledge` with Atlas vector search; flip MCP from mock → HTTP client | Planned |
 
-- A sufficiently clear prompt earns points.
-- A correct answer to an ambiguity-related question earns points.
-- Two failed attempts on a question deduct points; the code is still revealed.
+**Deferred:** Slack Events bot, full code-embedding index as a second system,
+cross-org autocomplete with name chips, 3D knowledge maps.
 
-Point values, thresholds, score persistence, recovery, and safeguards against inconsistent LLM judgments are **WIP**. The points are feedback within the experience, not a scientific measure of effort, comprehension, or developer ability.
+Practice → auto-publish knowledge card is a natural follow-on once real ingest
+and search exist on the Go API.
 
-A persistent visual mascot or similar long-term reward is intended for a later stage. Groot or a growing and wilting tree has been discussed as a candidate, but the character, appearance, states, and progression are **WIP** under this pivot. The MVP should stand on the intervention itself.
+### 3.3 Schema direction (**WIP** on Go; frozen for MCP)
 
-## 6. MVP boundary and superseded direction
+MCP contract: [`mcp/contracts/knowledge.ts`](mcp/contracts/knowledge.ts).
 
-The MVP should demonstrate one complete loop: evaluate a prompt in context, let Codex implement an ambiguous request as written, ask about one consequential choice, reveal the result after at most two attempts, and show the point outcome. A clear prompt should take the direct execution path and earn points.
+- `id`, `content`, `topics[]`, `properties{}`, `authors[]`, timestamps,
+  `organizationId`
+- optional properties for `repo` / `module` / `file_path` / `language`
+- Go side still needs collection validator + `embedding[]` + Atlas vector index
 
-The earlier whole-repo ASCII future diagram and pre-execution prompt rewrite are no longer the central experience. The previous dashboard, observability metrics, heatmap, and cortisol signal are also outside this product direction. Their old formulas must not be reused as a proxy for prompt quality or comprehension.
+### 3.4 MCP surface (agent discovery)
 
-The intervention is motivated by research on active engagement with AI-generated code, including Kazemitabaar et al., *Exploring the Design Space of Cognitive Engagement Techniques with AI-Generated Code for Enhanced Learning* (IUI 2025; arXiv:2410.08922). That work studied specific techniques with novice programmers; it does not validate this product's point rules, two-attempt limit, or use of Snowflake Cortex as a judge. Those choices require product testing.
+Agents attach to the Cortisol MCP **HTTP** endpoint (`POST /mcp`, default
+`:3100`). Tools: `quack` (smoke), `knowledge_search`, `knowledge_post`
+(knowledge backends mocked). **Slack tools are not part of Cortisol MCP** —
+agents use Slack’s official MCP (`https://mcp.slack.com/mcp`); see
+[`docs/slack-mcp.md`](docs/slack-mcp.md).
+
+Expose Cortisol (+ Slack) to the Codex app-server behind our TUI via
+[`.codex/config.toml.example`](.codex/config.toml.example) and
+[`docs/codex-mcp.md`](docs/codex-mcp.md).
+
+Deploy packaging (two containers only; Atlas external):
+
+```bash
+docker compose up --build
+```
+## 4. Intervention / practice (still in repo)
+
+The TUI intervention flow remains relevant as **how engineers engage with
+AI-generated work** and as a generator of structured practice events:
+
+1. User prompts in the TUI; clarity is evaluated in context.
+2. Clear prompts → points and normal Codex execution.
+3. Consequential ambiguity → gaps identified (Cortex); Codex runs on the
+   user’s original instructions.
+4. Selected logic is withheld; user answers up to **two** attempts about a
+   consequential choice.
+5. Points update; **code is revealed either way**.
+6. Conversation continues; later prompts re-enter the same flow.
+
+Clarity rubric details, reveal/staging safety when code is already on disk,
+and point economics remain partly **WIP** (see historical notes in git /
+TUI docs). A correct quiz answer is **not** proof of full understanding.
+
+Research inspiration (not a validation of our point rules): Kazemitabaar et
+al., *Exploring the Design Space of Cognitive Engagement Techniques with
+AI-Generated Code for Enhanced Learning* (IUI 2025; arXiv:2410.08922).
+
+## 5. Architecture (current)
+
+```text
+┌─────────────┐     JSON-RPC/stdio      ┌──────────────────┐
+│  Go TUI     │ ◄──────────────────────► │  codex app-server │
+└──────┬──────┘                          └──────────────────┘
+       │ (practice ingest — knowledge API WIP)
+       ▼
+┌─────────────┐     HTTP JSON           ┌──────────────────┐
+│  Dashboard  │ ◄──────────────────────► │  Go HTTP API     │
+└─────────────┘                          │  :8080 + Cortex  │
+                                         └────────┬─────────┘
+                                                  │
+                                         ┌────────▼─────────┐
+                                         │  MongoDB Atlas   │
+                                         └──────────────────┘
+
+┌─────────────┐   MCP Streamable HTTP   ┌──────────────────┐
+│ Agent host  │ ◄──────────────────────► │  cortisol MCP    │
+│ Codex/TUI   │                          │  :3100 (mocks)   │
+│ Cursor/etc  │ ───────────────────────► │  Slack MCP       │
+└─────────────┘                          │  mcp.slack.com   │
+                                         └──────────────────┘
+```
+
+- **Go API** (`server/cmd/server`): practice, evaluations, dashboard; Atlas via
+  `MONGODB_URI`.
+- **MCP** (`mcp/`): agent tools for org knowledge (+ `quack` smoke); mock
+  knowledge backends today. Slack is the official Slack MCP, configured next
+  to Cortisol in Codex/Cursor — not reimplemented here.
+- **Compose** packages only those two HTTP services; Atlas stays cloud-hosted.
+- **Codex** generates code in the TUI loop; **Cortex** evaluates prompts.
+
+## 6. Positioning guide (for pitches and agents)
+
+**Lead with:** engineering knowledge sharing in the coding loop; attributed
+teammate answers.
+
+**Support with:** onboarding ramp, bus factor, senior interrupt load;
+startups (few heads hold everything) vs large orgs (scattered knowledge,
+same experts overloaded).
+
+**Do not lead with:** general HR attrition theater, “we quiz your codebase,”
+or a 3D knowledge graph as the next milestone.
+
+**Category peers (not feature parity claims):** Stack Overflow for Teams /
+Stack Internal (eng Q&A), Unblocked (eng context + CLI/MCP), Sourcegraph
+(code intel), Copilot/Cursor (generation without org attribution).
+
+## 7. Superseded directions
+
+Do not treat these as the current product center:
+
+- Whole-repo ASCII “future diagram” / pre-execution prompt rewrite as the
+  main experience.
+- Passive dashboard cortisol / observability metric contract as the north star.
+- General-enterprise knowledge management (Confluence replacement) for all
+  employees.
+- Shipping Slack ingest or 3D cluster viz before `ask` + `add` work.
+
+Older formulas and contracts in the tree may still exist for compatibility;
+this file defines **target product intent**.
