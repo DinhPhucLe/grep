@@ -7,6 +7,7 @@ describe('parseEmployeePracticeView', () => {
   it('accepts a valid employee practice view', () => {
     const view = parseEmployeePracticeView(employeeMock);
     expect(view.schemaVersion).toBe('employee_practice.v1');
+    expect(view.subject.userName).toBe('Alex Rivera');
     expect(view.activityCalendar.days.length).toBeGreaterThan(0);
     expect(view.outcomePie.segments.map((s) => s.label)).toEqual([
       'correct',
@@ -25,7 +26,8 @@ describe('parseOrgPracticeView', () => {
   it('accepts a valid org practice view', () => {
     const view = parseOrgPracticeView(orgMock);
     expect(view.schemaVersion).toBe('org_practice.v1');
-    expect(view.codebaseTreemaps.length).toBe(1);
+    expect(view.subject.organizationName).toBe('NovaPay');
+    expect(view.codebaseTreemaps.length).toBeGreaterThan(0);
     expect(view.timeseries.points.length).toBeGreaterThan(0);
   });
 

@@ -13,6 +13,8 @@ import (
 type Directory interface {
 	RecommendPeople(ctx context.Context, query string, limit int) ([]PersonRecommendation, error)
 	RecommendOrganizations(ctx context.Context, query string, limit int) ([]OrgRecommendation, error)
+	LookupUserName(ctx context.Context, userID bson.ObjectID) (string, error)
+	LookupOrganizationName(ctx context.Context, orgID bson.ObjectID) (string, error)
 }
 
 type MongoDirectory struct {
@@ -93,4 +95,28 @@ func (d *MongoDirectory) RecommendOrganizations(ctx context.Context, query strin
 		items = append(items, OrgRecommendation{ID: doc.ID.Hex(), Name: doc.Name})
 	}
 	return items, nil
+}
+
+func (d *MongoDirectory) LookupUserName(ctx context.Context, userID bson.ObjectID) (string, error) {
+	var doc userDoc
+	err := d.users.FindOne(ctx, bson.M{"_id": userID}).Decode(&doc)
+	if err == mongo.ErrNoDocuments {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return doc.Name, nil
+}
+
+func (d *MongoDirectory) LookupOrganizationName(ctx context.Context, orgID bson.ObjectID) (string, error) {
+	var doc orgDoc
+	err := d.orgs.FindOne(ctx, bson.M{"_id": orgID}).Decode(&doc)
+	if err == mongo.ErrNoDocuments {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return doc.Name, nil
 }

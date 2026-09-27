@@ -71,8 +71,17 @@ func (s *Service) EmployeeView(ctx context.Context, userID, practice string, yea
 	if len(events) > 0 {
 		orgID = events[0].OrganizationID.Hex()
 	}
+	userName := ""
+	if s.directory != nil {
+		name, lookupErr := s.directory.LookupUserName(ctx, id)
+		if lookupErr != nil {
+			return EmployeePracticeView{}, lookupErr
+		}
+		userName = name
+	}
 	return BuildEmployeeView(EmployeeSubject{
 		UserID:         userID,
+		UserName:       userName,
 		OrganizationID: orgID,
 		Practice:       practice,
 		Year:           year,
@@ -88,10 +97,19 @@ func (s *Service) OrgView(ctx context.Context, orgID, practice string, from, to 
 	if err != nil {
 		return OrgPracticeView{}, err
 	}
+	orgName := ""
+	if s.directory != nil {
+		name, lookupErr := s.directory.LookupOrganizationName(ctx, id)
+		if lookupErr != nil {
+			return OrgPracticeView{}, lookupErr
+		}
+		orgName = name
+	}
 	return BuildOrgView(OrgSubject{
-		OrganizationID: orgID,
-		Practice:       practice,
-		From:           from.UTC().Format(time.RFC3339),
-		To:             to.UTC().Format(time.RFC3339),
+		OrganizationID:   orgID,
+		OrganizationName: orgName,
+		Practice:         practice,
+		From:             from.UTC().Format(time.RFC3339),
+		To:               to.UTC().Format(time.RFC3339),
 	}, events), nil
 }

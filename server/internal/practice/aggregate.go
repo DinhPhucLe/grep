@@ -9,6 +9,7 @@ import (
 
 type EmployeeSubject struct {
 	UserID         string `json:"userId"`
+	UserName       string `json:"userName,omitempty"`
 	OrganizationID string `json:"organizationId"`
 	Practice       string `json:"practice"`
 	Year           int    `json:"year"`
@@ -72,10 +73,11 @@ type EmployeePracticeView struct {
 }
 
 type OrgSubject struct {
-	OrganizationID string `json:"organizationId"`
-	Practice       string `json:"practice"`
-	From           string `json:"from"`
-	To             string `json:"to"`
+	OrganizationID   string `json:"organizationId"`
+	OrganizationName string `json:"organizationName,omitempty"`
+	Practice         string `json:"practice"`
+	From             string `json:"from"`
+	To               string `json:"to"`
 }
 
 type TreemapNode struct {
@@ -242,7 +244,8 @@ func BuildOrgView(subject OrgSubject, events []Event) OrgPracticeView {
 			root.Children[i].Intensity = intensityBucket(root.Children[i].Value, moduleMax)
 		}
 		sort.Slice(root.Children, func(i, j int) bool { return root.Children[i].Name < root.Children[j].Name })
-		root.Intensity = intensityBucket(root.Value, root.Value)
+		// Root is a container; keep neutral so sibling tiers read on the frontend.
+		root.Intensity = 0
 		view.CodebaseTreemaps = append(view.CodebaseTreemaps, CodebaseTreemap{
 			ProjectID: key.projectID,
 			RepoName:  key.repoName,

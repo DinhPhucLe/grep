@@ -2,25 +2,502 @@
   "schemaVersion": "employee_practice.v1",
   "generatedAt": "2026-09-26T18:00:00Z",
   "subject": {
-    "userId": "660000000000000001010000",
-    "organizationId": "660000000000000004010000",
+    "userId": "660100000000000001010000",
+    "userName": "Alex Rivera",
+    "organizationId": "660100000000000004000000",
     "practice": "lead_and_reveal",
     "year": 2026
   },
   "activityCalendar": {
     "status": "available",
     "days": [
-      { "date": "2026-03-01", "count": 2, "intensity": 4 },
-      { "date": "2026-03-02", "count": 1, "intensity": 2 }
+      {
+        "date": "2026-01-05",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-01-06",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-01-07",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-01-08",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-01-09",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-01-12",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-01-13",
+        "count": 4,
+        "intensity": 4
+      },
+      {
+        "date": "2026-01-14",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-01-15",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-01-19",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-01-20",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-01-21",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-01-22",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-01-23",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-01-26",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-01-27",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-01-28",
+        "count": 4,
+        "intensity": 4
+      },
+      {
+        "date": "2026-01-29",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-01-30",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-02-02",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-02-03",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-02-04",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-02-05",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-02-09",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-02-10",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-02-11",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-02-12",
+        "count": 4,
+        "intensity": 4
+      },
+      {
+        "date": "2026-02-13",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-02-14",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-02-16",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-02-17",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-02-18",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-02-19",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-02-20",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-02-23",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-02-24",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-02-25",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-02-26",
+        "count": 4,
+        "intensity": 4
+      },
+      {
+        "date": "2026-03-02",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-03-03",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-03-04",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-03-05",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-03-06",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-03-09",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-03-10",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-03-11",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-03-12",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-03-13",
+        "count": 4,
+        "intensity": 4
+      },
+      {
+        "date": "2026-03-16",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-03-17",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-03-18",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-03-19",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-03-23",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-03-24",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-03-25",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-03-26",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-03-27",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-03-30",
+        "count": 4,
+        "intensity": 4
+      },
+      {
+        "date": "2026-03-31",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-04-01",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-04-02",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-04-03",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-04-06",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-04-07",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-04-08",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-04-09",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-04-11",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-04-13",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-04-14",
+        "count": 4,
+        "intensity": 4
+      },
+      {
+        "date": "2026-04-15",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-04-16",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-04-17",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-04-20",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-04-21",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-04-22",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-04-23",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-04-24",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-04-27",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-04-28",
+        "count": 4,
+        "intensity": 4
+      },
+      {
+        "date": "2026-04-29",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-04-30",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-05-04",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-05-05",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-05-06",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-05-07",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-05-08",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-05-11",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-05-12",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-05-13",
+        "count": 4,
+        "intensity": 4
+      },
+      {
+        "date": "2026-05-14",
+        "count": 1,
+        "intensity": 1
+      },
+      {
+        "date": "2026-05-15",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-05-18",
+        "count": 3,
+        "intensity": 3
+      },
+      {
+        "date": "2026-06-20",
+        "count": 2,
+        "intensity": 2
+      },
+      {
+        "date": "2026-08-15",
+        "count": 2,
+        "intensity": 2
+      }
     ]
   },
   "outcomePie": {
     "status": "available",
     "segments": [
-      { "label": "correct", "value": 2 },
-      { "label": "failed_reveal", "value": 1 }
+      {
+        "label": "correct",
+        "value": 68
+      },
+      {
+        "label": "failed_reveal",
+        "value": 12
+      }
     ],
-    "display": { "primary": "2 correct / 1 failed" }
+    "display": {
+      "primary": "68 correct / 12 failed"
+    }
   },
   "metrics": [
     {
@@ -28,12 +505,54 @@
       "category": "significant",
       "label": "Practice instances",
       "status": "available",
-      "display": { "primary": "3" },
-      "visualization": { "type": "stat" }
+      "display": {
+        "primary": "80"
+      },
+      "visualization": {
+        "type": "stat"
+      }
+    },
+    {
+      "id": "median_active_answer_ms",
+      "category": "significant",
+      "label": "Median active answer time",
+      "status": "available",
+      "display": {
+        "primary": "11s"
+      },
+      "visualization": {
+        "type": "stat"
+      }
+    },
+    {
+      "id": "correct_count",
+      "category": "descriptive",
+      "label": "Correct outcomes",
+      "status": "available",
+      "display": {
+        "primary": "68"
+      },
+      "visualization": {
+        "type": "stat"
+      }
+    },
+    {
+      "id": "failed_reveal_count",
+      "category": "descriptive",
+      "label": "Failed reveal outcomes",
+      "status": "available",
+      "display": {
+        "primary": "12"
+      },
+      "visualization": {
+        "type": "stat"
+      }
     }
   ],
   "summary": {
     "status": "available",
-    "bullets": ["3 lead_and_reveal practice instances in 2026"]
+    "bullets": [
+      "80 lead_and_reveal practice instances in 2026"
+    ]
   }
 }

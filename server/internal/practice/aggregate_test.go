@@ -106,6 +106,17 @@ func TestBuildOrgViewTreemapAndTimeseries(t *testing.T) {
 	if tree.RepoName != "cortisol-cli" || tree.Status != "available" || tree.Root.Value != 3 {
 		t.Fatalf("%+v", tree)
 	}
+	if tree.Root.Intensity != 0 {
+		t.Fatalf("root intensity want 0 got %d", tree.Root.Intensity)
+	}
+	moduleIntensity := map[string]int{}
+	for _, child := range tree.Root.Children {
+		moduleIntensity[child.Name] = child.Intensity
+	}
+	// server has 2 events, cli has 1 → server should outrank cli when max is 2
+	if moduleIntensity["server"] <= moduleIntensity["cli"] {
+		t.Fatalf("expected server intensity > cli, got %v", moduleIntensity)
+	}
 	if view.Timeseries.Status != "available" || len(view.Timeseries.Points) == 0 {
 		t.Fatalf("%+v", view.Timeseries)
 	}

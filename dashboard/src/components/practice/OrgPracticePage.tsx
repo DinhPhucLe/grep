@@ -1,9 +1,20 @@
 import { Container, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { dashboardLayout } from '../../config/layout';
 import type { OrgPracticeView } from '../../contracts/practice';
+import { formatReadableDate, truncateId } from '../../utils/formatPractice';
 import { MetricRenderer } from '../metrics/MetricRenderer';
 import { CodebaseTreemapCard } from './CodebaseTreemapCard';
 import { PracticeTimeseriesCard } from './PracticeTimeseriesCard';
+
+function orgSubtitle(view: OrgPracticeView): string {
+  const { organizationName, organizationId, from, to } = view.subject;
+  const idPart = truncateId(organizationId);
+  const range = `${formatReadableDate(from)} → ${formatReadableDate(to)}`;
+  if (organizationName) {
+    return `${organizationName} · ${idPart} · ${range}`;
+  }
+  return `Org ${idPart} · ${range}`;
+}
 
 export function OrgPracticePage({ view }: { view: OrgPracticeView }) {
   return (
@@ -19,9 +30,7 @@ export function OrgPracticePage({ view }: { view: OrgPracticeView }) {
           <Title order={1} className="section-title">
             {view.subject.practice}
           </Title>
-          <Text className="secondary-text">
-            Org {view.subject.organizationId} · {view.subject.from} → {view.subject.to}
-          </Text>
+          <Text className="secondary-text">{orgSubtitle(view)}</Text>
         </div>
 
         <PracticeTimeseriesCard timeseries={view.timeseries} />

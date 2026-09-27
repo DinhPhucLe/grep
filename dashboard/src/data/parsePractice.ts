@@ -154,6 +154,14 @@ export function parseEmployeePracticeView(raw: unknown): EmployeePracticeView {
     generatedAt: expectString(view.generatedAt, 'employeePractice.generatedAt'),
     subject: {
       userId: expectString(subject.userId, 'employeePractice.subject.userId'),
+      ...(subject.userName === undefined
+        ? {}
+        : {
+            userName: expectString(
+              subject.userName,
+              'employeePractice.subject.userName',
+            ),
+          }),
       organizationId: expectString(
         subject.organizationId,
         'employeePractice.subject.organizationId',
@@ -203,6 +211,14 @@ export function parseOrgPracticeView(raw: unknown): OrgPracticeView {
         subject.organizationId,
         'orgPractice.subject.organizationId',
       ),
+      ...(subject.organizationName === undefined
+        ? {}
+        : {
+            organizationName: expectString(
+              subject.organizationName,
+              'orgPractice.subject.organizationName',
+            ),
+          }),
       practice: expectString(subject.practice, 'orgPractice.subject.practice'),
       from: expectString(subject.from, 'orgPractice.subject.from'),
       to: expectString(subject.to, 'orgPractice.subject.to'),

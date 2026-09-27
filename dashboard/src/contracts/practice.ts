@@ -26,6 +26,7 @@ export interface OutcomePie {
 
 export interface EmployeeSubject {
   userId: string;
+  userName?: string;
   organizationId: string;
   practice: string;
   year: number;
@@ -64,6 +65,7 @@ export interface TimeseriesPoint {
 
 export interface OrgSubject {
   organizationId: string;
+  organizationName?: string;
   practice: string;
   from: string;
   to: string;
