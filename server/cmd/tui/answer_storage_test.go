@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"cortisol-server/internal/quiz"
 	"encoding/json"
 	"net/http"
@@ -19,11 +20,18 @@ func TestAnswerSaveFailureRetainsDraftAndRetryIsIndividual(t *testing.T) {
 		if r.URL.Path != "/quiz-answers" || r.Method != "POST" || r.Header.Get("Authorization") != "" {
 			t.Errorf("unexpected request: %s", r.URL.Path)
 		}
-		var input map[string]string
+		var input struct {
+			UserID     string  `json:"user_id"`
+			QuizID     string  `json:"quiz_id"`
+			QuestionID string  `json:"question_id"`
+			Answer     string  `json:"answer"`
+			Graded     float64 `json:"graded"`
+			Reasoning  string  `json:"reasoning"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			t.Error(err)
 		}
-		if input["user_id"] != testUserID || input["quiz_id"] != "quiz-run" || input["question_id"] != "q1" || input["answer"] != "my answer" || len(input) != 4 {
+		if input.UserID != testUserID || input.QuizID != "quiz-run" || input.QuestionID != "q1" || input.Answer != "my answer" || input.Graded != 0.5 || input.Reasoning != "Missing the fallback." {
 			t.Errorf("wrong answer payload: %+v", input)
 		}
 		calls++
@@ -32,7 +40,7 @@ func TestAnswerSaveFailureRetainsDraftAndRetryIsIndividual(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"id":"answer-id","user_id":"66f600000000000000000001","quiz_id":"quiz-run","question_id":"q1","status":"ungraded","created_at":"2026-09-27T00:00:00Z"}`))
+		w.Write([]byte(`{"id":"answer-id","user_id":"66f600000000000000000001","quiz_id":"quiz-run","question_id":"q1","status":"graded","graded":0.5,"created_at":"2026-09-27T00:00:00Z"}`))
 	}))
 	defer server.Close()
 	m := generatedFilesQuizModel(t, server.URL)
@@ -43,9 +51,18 @@ func TestAnswerSaveFailureRetainsDraftAndRetryIsIndividual(t *testing.T) {
 	m.quiz.phase = "question"
 	m.quiz.panel = &conversationItem{kind: "quizPanel"}
 	m.draft.SetValue("my answer")
-	save := m.quizEnter("my answer")
-	if save == nil || m.quiz.phase != "saving" || m.quiz.index != 0 {
-		t.Fatal("answer was not saved before advancing")
+	grades := 0
+	m.grader = func(context.Context, string, quiz.Question, []quiz.File, string) (answerGrade, error) {
+		grades++
+		return answerGrade{Accuracy: 0.5, Explanation: "Missing the fallback."}, nil
+	}
+	grade := m.quizEnter("my answer")
+	if grade == nil || m.quiz.phase != "grading" || m.quiz.index != 0 || calls != 0 {
+		t.Fatal("answer was sent before grading")
+	}
+	_, save := m.Update(grade())
+	if save == nil || m.quiz.phase != "saving" {
+		t.Fatal("grade did not start save")
 	}
 	if cmd := m.quizEnter("duplicate"); cmd != nil {
 		t.Fatal("duplicate save scheduled")
@@ -55,16 +72,15 @@ func TestAnswerSaveFailureRetainsDraftAndRetryIsIndividual(t *testing.T) {
 		t.Fatal("failed save lost draft or claimed success")
 	}
 	save = m.quizEnter("my answer")
-	_, grade := m.Update(save())
-	if grade == nil || m.quiz.phase != "grading" {
-		t.Fatal("saved answer did not start grading")
+	if save == nil || m.quiz.phase != "saving" || grades != 1 {
+		t.Fatal("retry regraded or did not start save")
 	}
-	m.Update(grade())
+	m.Update(save())
 	if m.quiz.phase != "reveal" || m.quiz.index != 0 || m.draft.Value() != "" || !strings.Contains(m.quiz.panel.raw, "Answer saved") {
 		t.Fatal("save acknowledgment did not open continuation")
 	}
-	if calls != 2 {
-		t.Fatalf("got %d calls", calls)
+	if calls != 2 || grades != 1 || !strings.Contains(m.quiz.panel.raw, "Accuracy: 0.50") {
+		t.Fatalf("got %d calls and %d grades", calls, grades)
 	}
 }
 

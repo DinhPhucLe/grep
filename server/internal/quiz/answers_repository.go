@@ -10,20 +10,17 @@ import (
 )
 
 type AnswerRecord struct {
-	ID            bson.ObjectID `json:"id" bson:"_id"`
-	UserID        bson.ObjectID `json:"user_id" bson:"user_id"`
-	QuizID        bson.ObjectID `json:"quiz_id" bson:"quiz_id"`
-	QuestionID    string        `json:"question_id" bson:"question_id"`
-	ProjectID     bson.ObjectID `json:"project_id" bson:"project_id"`
-	ThreadID      string        `json:"thread_id" bson:"thread_id"`
-	TurnID        string        `json:"turn_id" bson:"turn_id"`
-	Answer        string        `json:"answer" bson:"answer"`
-	Status        string        `json:"status" bson:"status"`
-	CreatedAt     time.Time     `json:"created_at" bson:"created_at"`
-	Model         string        `json:"model" bson:"model"`
-	PromptVersion string        `json:"prompt_version" bson:"prompt_version"`
-	Question      Question      `json:"question" bson:"question"`
-	Request       Request       `json:"request" bson:"request"`
+	ID           bson.ObjectID `json:"id" bson:"_id"`
+	UserID       bson.ObjectID `json:"user_id" bson:"user_id"`
+	QuizID       bson.ObjectID `json:"quiz_id" bson:"quiz_id"`
+	QuestionID   string        `json:"question_id" bson:"question_id"`
+	ProjectID    bson.ObjectID `json:"project_id" bson:"project_id"`
+	Answer       string        `json:"answer" bson:"answer"`
+	QuizQuestion string        `json:"quiz_question" bson:"quiz_question"`
+	Graded       float64       `json:"graded" bson:"graded"`
+	Reasoning    string        `json:"reasoning" bson:"reasoning"`
+	Prompt       string        `json:"prompt" bson:"prompt"`
+	CreatedAt    time.Time     `json:"created_at" bson:"created_at"`
 }
 
 // Insert must enforce uniqueness of (user_id, quiz_id, question_id).

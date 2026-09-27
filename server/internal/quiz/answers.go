@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -28,10 +29,12 @@ var (
 )
 
 type AnswerRequest struct {
-	UserID     string `json:"user_id"`
-	QuizID     string `json:"quiz_id"`
-	QuestionID string `json:"question_id"`
-	Answer     string `json:"answer"`
+	UserID     string   `json:"user_id"`
+	QuizID     string   `json:"quiz_id"`
+	QuestionID string   `json:"question_id"`
+	Answer     string   `json:"answer"`
+	Graded     *float64 `json:"graded"`
+	Reasoning  string   `json:"reasoning"`
 }
 
 func (r AnswerRequest) Validate() error {
@@ -47,6 +50,12 @@ func (r AnswerRequest) Validate() error {
 	if strings.TrimSpace(r.Answer) == "" || len(r.Answer) > 8000 {
 		return errors.New("answer must contain 1 to 8000 bytes of nonblank text")
 	}
+	if r.Graded == nil || math.IsNaN(*r.Graded) || math.IsInf(*r.Graded, 0) || *r.Graded < 0 || *r.Graded > 1 {
+		return errors.New("graded must be a number between 0 and 1")
+	}
+	if len(r.Reasoning) > 1200 || (*r.Graded < 1 && strings.TrimSpace(r.Reasoning) == "") {
+		return errors.New("reasoning is required for partial or incorrect answers and must be at most 1200 bytes")
+	}
 	return nil
 }
 
@@ -56,6 +65,7 @@ type AnswerReceipt struct {
 	QuizID     string    `json:"quiz_id"`
 	QuestionID string    `json:"question_id"`
 	Status     string    `json:"status"`
+	Graded     float64   `json:"graded"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
@@ -189,10 +199,10 @@ func cloneQuizValue[T any](value T) (T, error) {
 	return clone, err
 }
 func answerReceipt(record AnswerRecord) AnswerReceipt {
-	return AnswerReceipt{ID: record.ID.Hex(), UserID: record.UserID.Hex(), QuizID: record.QuizID.Hex(), QuestionID: record.QuestionID, Status: record.Status, CreatedAt: record.CreatedAt}
+	return AnswerReceipt{ID: record.ID.Hex(), UserID: record.UserID.Hex(), QuizID: record.QuizID.Hex(), QuestionID: record.QuestionID, Status: "graded", Graded: record.Graded, CreatedAt: record.CreatedAt}
 }
-func sameAnswer(record AnswerRecord, answer string) (AnswerReceipt, error) {
-	if record.Answer != answer {
+func sameAnswer(record AnswerRecord, input AnswerRequest) (AnswerReceipt, error) {
+	if record.QuizQuestion == "" || record.Answer != input.Answer || record.Graded != *input.Graded || record.Reasoning != strings.TrimSpace(input.Reasoning) {
 		return AnswerReceipt{}, ErrAnswerConflict
 	}
 	return answerReceipt(record), nil
@@ -209,7 +219,7 @@ func (s *AnswerStore) Submit(ctx context.Context, input AnswerRequest) (AnswerRe
 		if err := s.requireProject(ctx, input.UserID, existing.ProjectID.Hex()); err != nil {
 			return AnswerReceipt{}, err
 		}
-		return sameAnswer(existing, input.Answer)
+		return sameAnswer(existing, input)
 	}
 	if !errors.Is(err, ErrAnswerNotFound) {
 		return AnswerReceipt{}, err
@@ -237,14 +247,7 @@ func (s *AnswerStore) Submit(ctx context.Context, input AnswerRequest) (AnswerRe
 	userID, _ := bson.ObjectIDFromHex(input.UserID)
 	quizID, _ := bson.ObjectIDFromHex(input.QuizID)
 	projectID, _ := bson.ObjectIDFromHex(snapshot.request.ProjectID)
-	savedRequest := snapshot.request
-	savedRequest.UserID, savedRequest.ProjectID, savedRequest.ThreadID, savedRequest.TurnID = "", "", "", ""
-	record := AnswerRecord{ID: bson.NewObjectID(), UserID: userID, QuizID: quizID, QuestionID: input.QuestionID, ProjectID: projectID, ThreadID: snapshot.request.ThreadID, TurnID: snapshot.request.TurnID, Answer: input.Answer, Status: "ungraded", CreatedAt: s.now().UTC().Truncate(time.Millisecond), Model: snapshot.response.Model, PromptVersion: snapshot.response.PromptVersion, Question: *selected, Request: savedRequest}
-	// Repository implementations must not receive aliases to the cached snapshot.
-	record, err = cloneQuizValue(record)
-	if err != nil {
-		return AnswerReceipt{}, err
-	}
+	record := AnswerRecord{ID: bson.NewObjectID(), UserID: userID, QuizID: quizID, QuestionID: input.QuestionID, ProjectID: projectID, Answer: input.Answer, Graded: *input.Graded, Reasoning: strings.TrimSpace(input.Reasoning), QuizQuestion: selected.Question, Prompt: snapshot.request.Input, CreatedAt: s.now().UTC().Truncate(time.Millisecond)}
 	if err = ctx.Err(); err != nil {
 		return AnswerReceipt{}, err
 	}
@@ -254,7 +257,7 @@ func (s *AnswerStore) Submit(ctx context.Context, input AnswerRequest) (AnswerRe
 		if findErr != nil {
 			return AnswerReceipt{}, fmt.Errorf("read concurrent answer: %w", findErr)
 		}
-		return sameAnswer(existing, input.Answer)
+		return sameAnswer(existing, input)
 	}
 	if err != nil {
 		return AnswerReceipt{}, err

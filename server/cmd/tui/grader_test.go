@@ -49,7 +49,7 @@ func TestPerfectAnswerShowsScoreWithoutExplanation(t *testing.T) {
 	}
 }
 
-func TestGradingFailureNeverInventsZeroAndCanAdvance(t *testing.T) {
+func TestGradingFailureNeverInventsZeroAndCanRetry(t *testing.T) {
 	m := generatedFilesQuizModel(t, "")
 	m.quiz.result = twoQuestions()
 	m.quiz.phase = "question"
@@ -58,11 +58,11 @@ func TestGradingFailureNeverInventsZeroAndCanAdvance(t *testing.T) {
 		return answerGrade{}, errors.New("provider unavailable")
 	}
 	m.Update(m.quizEnter("my answer")())
-	if m.quiz.phase != "reveal" || !strings.Contains(m.quiz.panel.raw, "Accuracy unavailable") || strings.Contains(m.quiz.panel.raw, "Accuracy: 0") {
+	if m.quiz.phase != "question" || !strings.Contains(m.quiz.panel.raw, "Accuracy unavailable") || strings.Contains(m.quiz.panel.raw, "Accuracy: 0") {
 		t.Fatal("grade failure fabricated a score")
 	}
-	if next := m.quizEnter(""); next == nil {
-		t.Fatal("grade failure blocked next question")
+	if retry := m.quizEnter("my answer"); retry == nil || m.quiz.index != 0 {
+		t.Fatal("grade failure blocked retry")
 	}
 }
 

@@ -101,8 +101,8 @@ credentials. The server reads users and projects and checks project ownership;
 it never creates or changes those records. Without a selection, chat and quizzes
 work, with answers explicitly labeled local only, not saved.
 
-Saving requires migration 8 (`quiz_answers` and indexes); null-score evaluation
-persistence requires migration 7. These were applied earlier with approval.
+Saving graded answers requires migration 9 (the quiz answer validator); migration 8 created `quiz_answers` and indexes. Null-score evaluation
+persistence requires migration 7. Migrations 7, 8, and 9 were applied with approval.
 Migrations never run on startup or during a request. Get explicit approval before
 applying any future migration.
 
@@ -168,9 +168,11 @@ evidence to avoid repetitive coverage.
 Grading uses an ephemeral Codex CLI run in a scratch directory with a read-only
 sandbox. It receives only the question, answer, and referenced source excerpts;
 it does not enter the coding conversation. An unavailable or invalid grade shows
-no score and still lets the user continue. Grades are displayed in the TUI only;
-`quiz_answers` keeps the submitted answer with status `ungraded` because its
-schema has no grade fields. There are no batch grading calls or point rewards.
+no score and keeps the answer for retry. Once graded, the TUI sends the answer,
+score, reasoning, and selected user to `/quiz-answers`; the server adds the
+authoritative question, original prompt, and timestamp. A failed save retains
+the grade for retry. Migration 9 was applied with approval, so graded saves are enabled. There
+are no batch grading calls or point rewards.
 Generation errors end the quiz with an explanation; no automatic retries occur.
 Drafts are restored afterward. Codex approvals and input requests remain available.
 

@@ -1,0 +1,83 @@
+[
+  {
+    "collMod": "quiz_answers",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+          "_id",
+          "user_id",
+          "project_id",
+          "quiz_id",
+          "question_id",
+          "answer",
+          "quiz_question",
+          "graded",
+          "reasoning",
+          "prompt",
+          "created_at"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "_id": {
+            "bsonType": "objectId"
+          },
+          "user_id": {
+            "bsonType": "objectId",
+            "description": "References existing users._id. Application checks existence; this is not authentication."
+          },
+          "project_id": {
+            "bsonType": "objectId",
+            "description": "References existing projects._id. Application checks existence and that projects.user_id matches user_id."
+          },
+          "quiz_id": {
+            "bsonType": "objectId",
+            "description": "Server-generated quiz run identifier, shared by answers from that run. No quizzes collection is created by this migration."
+          },
+          "question_id": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "pattern": "^q[1-9][0-9]*$"
+          },
+          "answer": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 8000,
+            "description": "Original user answer. Application enforces nonblank content and an 8000-byte limit."
+          },
+          "created_at": {
+            "bsonType": "date",
+            "description": "Server-assigned time of first successful submission; immutable on retries."
+          },
+          "quiz_question": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "graded": {
+            "bsonType": [
+              "double",
+              "int",
+              "long",
+              "decimal"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "reasoning": {
+            "bsonType": "string",
+            "maxLength": 1200
+          },
+          "prompt": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 32000
+          }
+        }
+      }
+    },
+    "validationLevel": "moderate",
+    "validationAction": "error"
+  }
+]

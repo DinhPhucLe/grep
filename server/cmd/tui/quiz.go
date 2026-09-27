@@ -32,6 +32,8 @@ type quizSession struct {
 	editorCancel      context.CancelFunc
 	feedback          string
 	savedDraft        string
+	pendingAnswer     string
+	pendingGrade      *answerGrade
 	panel             *conversationItem
 	cancel            context.CancelFunc
 }
@@ -52,6 +54,7 @@ type quizAnswerSavedMsg struct {
 	session *quizSession
 	index   int
 	answer  string
+	grade   answerGrade
 	err     error
 }
 
@@ -59,7 +62,6 @@ type quizAnswerGradedMsg struct {
 	session *quizSession
 	index   int
 	answer  string
-	saved   bool
 	grade   answerGrade
 	err     error
 }
@@ -276,35 +278,51 @@ func (m *model) handleQuizMessage(msg tea.Msg) tea.Cmd {
 		if strings.TrimSpace(m.draft.Value()) == v.answer {
 			m.draft.Reset()
 		}
-		return m.startAnswerGrading(v.answer, true)
+		q.pendingGrade = nil
+		m.showGradedAnswer(v.answer, v.grade, true)
+		return nil
 	case quizAnswerGradedMsg:
 		if m.quiz != v.session || v.session.phase != "grading" || v.session.index != v.index {
 			return nil
 		}
 		q := m.quiz
 		m.busy = false
-		q.phase = "reveal"
-		where := "Shown locally only; answer not saved."
-		if v.saved {
-			where = "Answer saved."
+		if v.err != nil || v.grade.Validate() != nil {
+			q.phase = "question"
+			m.showQuizQuestion("Accuracy unavailable: Codex could not evaluate this answer. Your answer is still in the composer. Press Enter to retry.")
+			return nil
 		}
-		feedback := "Your answer: " + v.answer + "\n" + where + "\n"
-		if v.err != nil {
-			feedback += "Accuracy unavailable: Codex could not evaluate this answer."
-		} else {
-			feedback += fmt.Sprintf("Accuracy: %.2f", v.grade.Accuracy)
-			if v.grade.Accuracy < 1 {
-				feedback += "\n" + v.grade.Explanation
-			}
+		if v.grade.Accuracy == 1 {
+			v.grade.Explanation = ""
 		}
-		feedback += "\nPress Enter to continue."
-		m.showQuizQuestion(feedback)
+		q.pendingAnswer, q.pendingGrade = v.answer, &v.grade
+		if m.opts.UserID != "" {
+			return m.startAnswerSave(v.answer, v.grade)
+		}
+		if strings.TrimSpace(m.draft.Value()) == v.answer {
+			m.draft.Reset()
+		}
+		m.showGradedAnswer(v.answer, v.grade, false)
 
 	}
 	return nil
 }
 
-func (m *model) startAnswerGrading(answer string, saved bool) tea.Cmd {
+func (m *model) showGradedAnswer(answer string, grade answerGrade, saved bool) {
+	q := m.quiz
+	q.phase = "reveal"
+	where := "Shown locally only; answer not saved."
+	if saved {
+		where = "Answer saved."
+	}
+	feedback := "Your answer: " + answer + "\n" + where + "\n" + fmt.Sprintf("Accuracy: %.2f", grade.Accuracy)
+	if grade.Accuracy < 1 {
+		feedback += "\n" + grade.Explanation
+	}
+	m.showQuizQuestion(feedback + "\nPress Enter to continue.")
+}
+
+func (m *model) startAnswerGrading(answer string) tea.Cmd {
 	q := m.quiz
 	q.phase = "grading"
 	m.busy = true
@@ -316,7 +334,29 @@ func (m *model) startAnswerGrading(answer string, saved bool) tea.Cmd {
 	return func() tea.Msg {
 		defer cancel()
 		grade, err := grader(ctx, workspace, question, files, answer)
-		return quizAnswerGradedMsg{session: q, index: index, answer: answer, saved: saved, grade: grade, err: err}
+		return quizAnswerGradedMsg{session: q, index: index, answer: answer, grade: grade, err: err}
+	}
+}
+
+func (m *model) startAnswerSave(answer string, grade answerGrade) tea.Cmd {
+	q := m.quiz
+	q.phase = "saving"
+	m.busy = true
+	m.showQuizQuestion("Saving your graded answer…")
+	m.status = "Saving answer…"
+	ctx, cancel := context.WithTimeout(m.traceContext(), 15*time.Second)
+	q.cancel = cancel
+	index, server := q.index, m.apiServer()
+	score := grade.Accuracy
+	request := quiz.AnswerRequest{UserID: m.opts.UserID, QuizID: q.quizID, QuestionID: q.result.Questions[index].ID, Answer: answer, Graded: &score, Reasoning: grade.Explanation}
+	return func() tea.Msg {
+		defer cancel()
+		var receipt quiz.AnswerReceipt
+		err := postQuizJSON(ctx, server, "quiz-answers", request, &receipt)
+		if err == nil && (receipt.ID == "" || receipt.UserID != request.UserID || receipt.QuizID != request.QuizID || receipt.QuestionID != request.QuestionID || receipt.Status != "graded" || receipt.Graded != score) {
+			err = fmt.Errorf("invalid answer save acknowledgment")
+		}
+		return quizAnswerSavedMsg{session: q, index: index, answer: answer, grade: grade, err: err}
 	}
 }
 
@@ -390,6 +430,8 @@ func (m *model) quizEnter(text string) tea.Cmd {
 		return nil
 	}
 	if q.phase == "reveal" {
+		q.pendingGrade = nil
+		q.pendingAnswer = ""
 		q.index++
 		if q.index >= q.questionCount() {
 			m.finishQuiz("Review complete.")
@@ -414,27 +456,12 @@ func (m *model) quizEnter(text string) tea.Cmd {
 			m.showQuizQuestion("Answer not saved: this quiz has no storage ID. Keep your answer and generate a new quiz with the updated server.")
 			return nil
 		}
-		q.phase = "saving"
-		m.busy = true
-		m.status = "Saving answer…"
-		m.showQuizQuestion("Saving your answer…")
-		m.status = "Saving answer…"
-		ctx, cancel := context.WithTimeout(m.traceContext(), 15*time.Second)
-		q.cancel = cancel
-		index, server := q.index, m.apiServer()
-		request := quiz.AnswerRequest{UserID: m.opts.UserID, QuizID: q.quizID, QuestionID: q.result.Questions[index].ID, Answer: text}
-		return func() tea.Msg {
-			defer cancel()
-			var receipt quiz.AnswerReceipt
-			err := postQuizJSON(ctx, server, "quiz-answers", request, &receipt)
-			if err == nil && (receipt.ID == "" || receipt.UserID != request.UserID || receipt.QuizID != request.QuizID || receipt.QuestionID != request.QuestionID || receipt.Status != "ungraded") {
-				err = fmt.Errorf("invalid answer save acknowledgment")
-			}
-			return quizAnswerSavedMsg{session: q, index: index, answer: text, err: err}
-		}
 	}
-	m.draft.Reset()
-	return m.startAnswerGrading(text, false)
+	if q.pendingGrade != nil && q.pendingAnswer == text && m.opts.UserID != "" {
+		return m.startAnswerSave(text, *q.pendingGrade)
+	}
+	q.pendingGrade = nil
+	return m.startAnswerGrading(text)
 }
 
 func (m *model) finishQuiz(message string) {

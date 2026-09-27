@@ -1,4 +1,7 @@
-# Migration 8: quiz answers — ready for review, not applied
+# Migration 8: original quiz-answer collection (applied)
+
+This documents the original collection schema. Migration 9 stores
+graded answers in a smaller record and was applied with approval.
 
 This replaces the earlier, unapplied `000008_participant_answers` draft.
 It creates **only `quiz_answers`**. It does not create `participants` or `quizzes`,

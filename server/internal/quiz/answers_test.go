@@ -9,6 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/drivertest"
+	"math"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -74,6 +75,10 @@ func identifiedRequest() Request {
 	r.TurnID = "turn-1"
 	return r
 }
+func gradedRequest(quizID, answer string) AnswerRequest {
+	grade := 1.0
+	return AnswerRequest{UserID: answerUser, QuizID: quizID, QuestionID: "q1", Answer: answer, Graded: &grade}
+}
 func answerFixture(t *testing.T) (*AnswerStore, *memoryAnswers, *fakeCompleter, Response) {
 	t.Helper()
 	raw, _ := json.Marshal(exampleResult())
@@ -86,14 +91,14 @@ func answerFixture(t *testing.T) (*AnswerStore, *memoryAnswers, *fakeCompleter, 
 	}
 	return s, repo, client, r
 }
-func TestAnswerStoresAuthoritativeSnapshotWithoutGrading(t *testing.T) {
+func TestAnswerStoresAuthoritativeQuestionPromptAndGrade(t *testing.T) {
 	s, repo, client, res := answerFixture(t)
 	if res.QuizID == "" {
 		t.Fatal("missing quiz ID")
 	}
 	res.Questions[0].Question = "client mutation"
 	res.Questions[0].Evidence[0].StartLine = 999
-	receipt, err := s.Submit(context.Background(), AnswerRequest{answerUser, res.QuizID, "q1", "generic errors"})
+	receipt, err := s.Submit(context.Background(), gradedRequest(res.QuizID, "generic errors"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +106,7 @@ func TestAnswerStoresAuthoritativeSnapshotWithoutGrading(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if receipt.Status != "ungraded" || r.Status != "ungraded" || r.Question.Question != exampleResult().Questions[0].Question || r.Question.Evidence[0].StartLine != 3 || r.Request.Files[0].Content != exampleRequest().Files[0].Content || r.Model != "test-model" || r.PromptVersion != PromptVersion || r.ProjectID.Hex() != "66f600000000000000000003" || r.ThreadID != "thread-1" || r.TurnID != "turn-1" || r.CreatedAt.IsZero() {
+	if receipt.Status != "graded" || r.QuizQuestion != exampleResult().Questions[0].Question || r.Prompt != exampleRequest().Input || r.Graded != 1 || r.ProjectID.Hex() != "66f600000000000000000003" || r.CreatedAt.IsZero() {
 		t.Fatalf("incorrect snapshot: %+v", r)
 	}
 	if client.calls != 1 {
@@ -122,23 +127,18 @@ func TestAnswerStoresAuthoritativeSnapshotWithoutGrading(t *testing.T) {
 			t.Fatalf("%s must be a BSON ObjectID", field)
 		}
 	}
-	requestDoc := doc.Lookup("request").Document()
-	for _, field := range []string{"user_id", "project_id", "thread_id", "turn_id"} {
-		if requestDoc.Lookup(field).Type != 0 {
-			t.Fatalf("request snapshot contains root metadata %s", field)
+	if doc.Lookup("graded").Type != bson.TypeDouble {
+		t.Fatal("missing numeric grade")
+	}
+	for _, field := range []string{"status", "question", "request", "model", "prompt_version", "thread_id", "turn_id"} {
+		if doc.Lookup(field).Type != 0 {
+			t.Fatalf("unexpected legacy field %s", field)
 		}
-	}
-	question := doc.Lookup("question").Document()
-	if question.Lookup("gap_indices").Type == 0 || question.Lookup("evidence").Array().Index(0).Document().Lookup("start_line").Type == 0 {
-		t.Fatal("nested BSON lost snake_case")
-	}
-	if doc.Lookup("grade").Type != 0 {
-		t.Fatal("unexpected grade")
 	}
 }
 func TestAnswerIdempotencySurvivesCacheLoss(t *testing.T) {
 	s, repo, _, res := answerFixture(t)
-	in := AnswerRequest{answerUser, res.QuizID, "q1", "original"}
+	in := gradedRequest(res.QuizID, "original")
 	first, err := s.Submit(context.Background(), in)
 	if err != nil {
 		t.Fatal(err)
@@ -169,7 +169,7 @@ func TestAnswerRejectsUnknownOrExpiredContext(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, repo, _, res := answerFixture(t)
-			r := AnswerRequest{answerUser, res.QuizID, "q1", "answer"}
+			r := gradedRequest(res.QuizID, "answer")
 			tc.change(s, &r)
 			if _, err := s.Submit(context.Background(), r); !errors.Is(err, tc.want) {
 				t.Fatalf("got %v, want %v", err, tc.want)
@@ -188,7 +188,7 @@ func TestAnswerHTTPValidationAndStatuses(t *testing.T) {
 	}{
 		{"", res.QuizID, "", 400}, {"  ", res.QuizID, "", 400}, {strings.Repeat("a", 8001), res.QuizID, "", 400}, {"a", bson.NewObjectID().Hex(), "", 404}, {"a", res.QuizID, `,"question":{}`, 400}, {"a", res.QuizID, "", 200}, {"b", res.QuizID, "", 409},
 	} {
-		body := `{"user_id":"` + answerUser + `","quiz_id":"` + tc.quiz + `","question_id":"q1","answer":"` + tc.answer + `"` + tc.extra + `}`
+		body := `{"user_id":"` + answerUser + `","quiz_id":"` + tc.quiz + `","question_id":"q1","answer":"` + tc.answer + `","graded":1,"reasoning":""` + tc.extra + `}`
 		r := httptest.NewRequest("POST", "/quizzes/answers", strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -200,7 +200,7 @@ func TestAnswerHTTPValidationAndStatuses(t *testing.T) {
 }
 func TestAnswerCancellationAndStorageFailure(t *testing.T) {
 	s, repo, _, res := answerFixture(t)
-	in := AnswerRequest{answerUser, res.QuizID, "q1", "answer"}
+	in := gradedRequest(res.QuizID, "answer")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := s.Submit(ctx, in); !errors.Is(err, context.Canceled) {
@@ -242,7 +242,7 @@ func TestQuizCapacityPreservesActiveSnapshots(t *testing.T) {
 	if _, err := s.Generate(context.Background(), identifiedRequest()); !errors.Is(err, ErrQuizCapacity) {
 		t.Fatalf("capacity ignored: %v", err)
 	}
-	if _, err := s.Submit(context.Background(), AnswerRequest{answerUser, res.QuizID, "q1", "answer"}); err != nil {
+	if _, err := s.Submit(context.Background(), gradedRequest(res.QuizID, "answer")); err != nil {
 		t.Fatalf("active quiz evicted: %v", err)
 	}
 }
@@ -257,21 +257,22 @@ func TestAnswerSnapshotDoesNotAliasOriginalRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	request.Input = "mutated"
 	request.Files[0].Content = "mutated"
 	request.Evaluation.Gaps[0].Description = "mutated"
 	*request.Evaluation.AmbiguityScore = 0
-	_, err = store.Submit(context.Background(), AnswerRequest{answerUser, response.QuizID, "q1", "answer"})
+	_, err = store.Submit(context.Background(), gradedRequest(response.QuizID, "answer"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	record, _ := repo.Find(context.Background(), answerUser, response.QuizID, "q1")
-	if record.Request.Files[0].Content == "mutated" || record.Request.Evaluation.Gaps[0].Description == "mutated" || *record.Request.Evaluation.AmbiguityScore != 0.7 {
+	if record.Prompt != exampleRequest().Input || record.QuizQuestion != exampleResult().Questions[0].Question {
 		t.Fatal("request mutation changed authoritative snapshot")
 	}
 }
 func TestAnswerConcurrentRetriesKeepOneImmutableRecord(t *testing.T) {
 	store, repo, _, response := answerFixture(t)
-	input := AnswerRequest{answerUser, response.QuizID, "q1", "answer"}
+	input := gradedRequest(response.QuizID, "answer")
 	results := make(chan AnswerReceipt, 16)
 	errs := make(chan error, 16)
 	var wg sync.WaitGroup
@@ -327,7 +328,7 @@ func TestAnswerMigrationAndUserFailuresAreSafe(t *testing.T) {
 	}{{ErrMigrationRequired, 503, "migration_required"}, {errors.New("private user DB info"), 500, "quiz_failed"}} {
 		store, _, _, response := answerFixture(t)
 		store.users = answerUsers{err: tc.err}
-		input := AnswerRequest{answerUser, response.QuizID, "q1", "answer"}
+		input := gradedRequest(response.QuizID, "answer")
 		raw, _ := json.Marshal(input)
 		req := httptest.NewRequest("POST", "/quizzes/answers", strings.NewReader(string(raw)))
 		req.Header.Set("Content-Type", "application/json")
@@ -429,7 +430,7 @@ func TestProjectOwnershipRequiredForGenerationAndSaving(t *testing.T) {
 	if client.calls != 1 {
 		t.Fatal("wrong project reached Snowflake")
 	}
-	if _, err := store.Submit(context.Background(), AnswerRequest{answerUser, response.QuizID, "q1", "answer"}); !errors.Is(err, ErrProjectNotFound) {
+	if _, err := store.Submit(context.Background(), gradedRequest(response.QuizID, "answer")); !errors.Is(err, ErrProjectNotFound) {
 		t.Fatalf("save accepted wrong project: %v", err)
 	}
 	if len(repo.records) != 0 {
@@ -439,7 +440,7 @@ func TestProjectOwnershipRequiredForGenerationAndSaving(t *testing.T) {
 
 func TestRetryChecksCurrentProjectOwnership(t *testing.T) {
 	store, _, _, response := answerFixture(t)
-	input := AnswerRequest{answerUser, response.QuizID, "q1", "answer"}
+	input := gradedRequest(response.QuizID, "answer")
 	if _, err := store.Submit(context.Background(), input); err != nil {
 		t.Fatal(err)
 	}
@@ -448,3 +449,47 @@ func TestRetryChecksCurrentProjectOwnership(t *testing.T) {
 		t.Fatalf("retry ignored changed ownership: %v", err)
 	}
 }
+
+func TestAnswerPersistsGradeQuestionPromptAndReasoning(t *testing.T) {
+	store, repo, _, response := answerFixture(t)
+	grade := 0.5
+	input := AnswerRequest{UserID: answerUser, QuizID: response.QuizID, QuestionID: "q1", Answer: "partial", Graded: &grade, Reasoning: "Missing the fallback."}
+	receipt, err := store.Submit(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := repo.Find(context.Background(), answerUser, response.QuizID, "q1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.QuizQuestion != exampleResult().Questions[0].Question || record.Prompt != exampleRequest().Input || record.Graded != grade || record.Reasoning != input.Reasoning || receipt.Graded != grade {
+		t.Fatalf("graded answer was not persisted: %+v; receipt %+v", record, receipt)
+	}
+	if record.CreatedAt.IsZero() || record.UserID.Hex() != answerUser || record.Answer != "partial" {
+		t.Fatalf("core answer fields missing: %+v", record)
+	}
+}
+
+func TestAnswerRejectsMissingOrInvalidGrade(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		graded    *float64
+		reasoning string
+	}{
+		{"missing", nil, ""},
+		{"negative", gradePointer(-0.1), "wrong"},
+		{"above_one", gradePointer(1.1), ""},
+		{"nan", gradePointer(math.NaN()), "wrong"},
+		{"partial_without_reason", gradePointer(0.5), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, repo, _, response := answerFixture(t)
+			input := AnswerRequest{UserID: answerUser, QuizID: response.QuizID, QuestionID: "q1", Answer: "answer", Graded: tc.graded, Reasoning: tc.reasoning}
+			if _, err := store.Submit(context.Background(), input); err == nil || len(repo.records) != 0 {
+				t.Fatalf("invalid grade was saved: %v, %+v", err, repo.records)
+			}
+		})
+	}
+}
+
+func gradePointer(value float64) *float64 { return &value }
