@@ -13,6 +13,7 @@ import (
 	"cortisol-server/internal/evaluation"
 	"cortisol-server/internal/health"
 	"cortisol-server/internal/jobs"
+	"cortisol-server/internal/quiz"
 
 	"github.com/joho/godotenv"
 )
@@ -69,6 +70,10 @@ func run() error {
 	handler := evaluation.NewHandler(queue, cortexConfig.Timeout)
 	mux.HandleFunc("/evaluations", handler)
 	mux.HandleFunc("/jobs", handler)
+	quizService := quiz.NewService(cortexClient, cortexConfig.Model)
+	quizQueue := jobs.NewQueue(4, 100, quizService.Generate)
+	defer quizQueue.Close()
+	mux.HandleFunc("/quizzes", quiz.NewHandler(quizQueue, cortexConfig.Timeout))
 
 	address := os.Getenv("HTTP_ADDR")
 	if address == "" {

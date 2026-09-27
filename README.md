@@ -83,6 +83,10 @@ and protocol details, see [`server/cmd/tui/README.md`](server/cmd/tui/README.md)
 
 ## Snowflake Local Development Setup
 
+The server also exposes a standalone [`POST /quizzes` endpoint](server/internal/quiz/README.md)
+for generating questions from ambiguous prompts and generated code. TUI quiz
+wiring, grading, and code reveal are not implemented yet.
+
 These instructions cover team Snowflake access for local development. This branch does not yet include the Snowflake connection checker referenced below; the account and user setup can be completed independently.
 
 ### Connection model
