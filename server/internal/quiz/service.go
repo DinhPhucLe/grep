@@ -79,7 +79,7 @@ func (s *Service) Generate(ctx context.Context, request Request) (Response, erro
 // validation and rendering. A final newline terminates the last
 // line; it does not add an empty line, matching Result.Validate.
 func generationInput(request Request) ([]byte, error) {
-	request.UserID, request.ProjectID, request.ThreadID, request.TurnID = "", "", "", ""
+	request.UserID, request.ThreadID, request.TurnID = "", "", ""
 	type numberedFile struct {
 		Path      string `json:"path"`
 		Content   string `json:"content"`

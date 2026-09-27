@@ -21,7 +21,6 @@ type uiOptions struct {
 	ApprovalPolicy                  string
 	TimingLog                       string
 	UserID                          string
-	ProjectID                       string
 }
 type conversationItem struct {
 	key, kind, raw, status, command, output string

@@ -23,7 +23,6 @@ func main() {
 	approvalPolicy := flag.String("approval-policy", "on-request", "Codex execution approvals: on-request or never (workspace sandbox stays enabled)")
 	timingLog := flag.String("timing-log", "", "append payload-free latency events to this JSONL file")
 	userID := flag.String("user-id", "", "existing MongoDB user ID for saving quiz answers (no login)")
-	projectID := flag.String("project-id", "", "existing MongoDB project ID owned by the selected user")
 	flag.Parse()
 	if *viewFlag {
 		if err := viewSessionLog(flag.Arg(0)); err != nil {
@@ -39,7 +38,7 @@ func main() {
 		// Windows terminals may omit TERM even though styling is supported.
 		lipgloss.SetColorProfile(termenv.ANSI256)
 	}
-	if err := run(*logFlag, uiOptions{NoIcons: *icons, ReducedMotion: *motion, NoColor: *noColor, EvaluationServer: *evaluationServer, ApprovalPolicy: *approvalPolicy, TimingLog: *timingLog, UserID: *userID, ProjectID: *projectID}); err != nil {
+	if err := run(*logFlag, uiOptions{NoIcons: *icons, ReducedMotion: *motion, NoColor: *noColor, EvaluationServer: *evaluationServer, ApprovalPolicy: *approvalPolicy, TimingLog: *timingLog, UserID: *userID}); err != nil {
 		fmt.Fprintln(os.Stderr, "tui:", err)
 		os.Exit(1)
 	}
@@ -57,11 +56,11 @@ func run(logging bool, opts uiOptions) error {
 	if err != nil {
 		return err
 	}
-	selection, err := loadUserSelection(configDir, cwd, opts.UserID, opts.ProjectID)
+	selection, err := loadUserSelection(configDir, cwd, opts.UserID)
 	if err != nil {
 		return err
 	}
-	opts.UserID, opts.ProjectID = selection.UserID, selection.ProjectID
+	opts.UserID = selection.UserID
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var logger *sessionLogger

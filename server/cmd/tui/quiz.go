@@ -111,7 +111,6 @@ func (m *model) startQuizGeneration() tea.Cmd {
 	request, workspace, server, baseline := q.request, m.workspace, m.apiServer(), q.baseline
 	request.UserID = m.opts.UserID
 	if request.UserID != "" {
-		request.ProjectID = m.opts.ProjectID
 		request.ThreadID, request.TurnID = m.threadID, q.turnID
 	}
 	return func() tea.Msg {
@@ -392,6 +391,9 @@ func (m *model) showQuizQuestion(feedback string) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Question %d/%d\n", q.index+1, q.questionCount())
 	b.WriteString("Review the implementation in your editor, then answer. Codex evaluates each answer.\n")
+	if m.opts.UserID == "" {
+		b.WriteString("Answers will stay local. Restart with --user-id to save them.\n")
+	}
 	fmt.Fprintf(&b, "\n%s\n", question.Question)
 	if feedback != "" {
 		b.WriteString("\n" + feedback + "\n")

@@ -30,15 +30,6 @@ func (r *MongoRepository) Exists(ctx context.Context, value string) (bool, error
 	return r.exists(ctx, "users", bson.M{"_id": id})
 }
 
-func (r *MongoRepository) OwnsProject(ctx context.Context, userID, projectID string) (bool, error) {
-	if !ValidID(userID) || !ValidID(projectID) {
-		return false, nil
-	}
-	owner, _ := bson.ObjectIDFromHex(userID)
-	project, _ := bson.ObjectIDFromHex(projectID)
-	return r.exists(ctx, "projects", bson.M{"_id": project, "user_id": owner})
-}
-
 func (r *MongoRepository) exists(ctx context.Context, collection string, filter bson.M) (bool, error) {
 	err := r.database.Collection(collection).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"_id": 1})).Err()
 	if errors.Is(err, mongo.ErrNoDocuments) {

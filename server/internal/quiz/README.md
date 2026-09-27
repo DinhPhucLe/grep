@@ -17,10 +17,10 @@ Send `Content-Type: application/json` with:
   `content`. Each file is at most 128,000 bytes; combined text is at most 256,000
   bytes and the HTTP body at most 1 MiB. The endpoint never reads local files.
 - `max_questions`: 1–4; omitted or zero means 4.
-- For answer storage: `user_id` and `project_id` are existing MongoDB ObjectID
-  hex strings, plus Codex `thread_id` and `turn_id`. The TUI uses the locally
-  selected IDs. The server reads `users` and verifies `projects.user_id` matches
-  the selected user. These metadata fields are not sent to Snowflake.
+- For answer storage: `user_id` is an existing MongoDB ObjectID hex string,
+  plus Codex `thread_id` and `turn_id`. The TUI uses the locally selected user.
+  The server checks that the user exists. These metadata fields are not sent
+  to Snowflake.
 
 ## Response
 
@@ -62,16 +62,16 @@ skips the quiz. No generated files also skips generation entirely.
 Answers are graded individually by an isolated Codex CLI run before submission.
 The TUI sends one answer, score (`graded`, 0–1), and `reasoning` to
 `POST /quiz-answers`; partial and incorrect answers require reasoning. The
-server validates the input, checks the selected user and project, and uses its
+server validates the input, checks the selected user, and uses its
 quiz snapshot to add `quiz_question`, the original `prompt`, and `created_at`.
-The record also retains `quiz_id`, `question_id`, and `project_id` for unique
-submissions and ownership checks. Identical retries return the existing receipt;
+The record also retains `quiz_id` and `question_id` for unique submissions. Identical retries return the existing receipt;
 conflicting answers or grades return 409. No grade API or batching is used.
 
 Migration 8 created `quiz_answers` and its indexes. Migration 9 changes the
 validator for the concise graded record; it was applied with approval. Existing
 ungraded records remain untouched. Runtime code does not create collections or
-run migrations. The configured database is at version 9; graded saves use that validator. Unidentified quizzes can be graded locally but
+run migrations. Migration 10 removes `project_id` from new answer records and adds a user-history
+index; it was applied with approval. The configured database is at version 10. Unidentified quizzes can be graded locally but
 cannot save answers. Unanswered quiz snapshots expire after 24 hours and do not
 survive a server restart.
 

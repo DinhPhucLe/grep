@@ -17,9 +17,8 @@ import (
 )
 
 var (
-	ErrInvalidQuizMetadata = errors.New("quiz metadata requires user_id and project_id ObjectIDs plus thread_id and turn_id of at most 256 bytes")
+	ErrInvalidQuizMetadata = errors.New("quiz metadata requires a user_id ObjectID plus thread_id and turn_id of at most 256 bytes")
 	ErrUserNotFound        = errors.New("user was not found")
-	ErrProjectNotFound     = errors.New("project was not found for the selected user")
 	ErrQuizNotFound        = errors.New("quiz was not found or has expired")
 	ErrQuestionNotFound    = errors.New("question was not found in this quiz")
 	ErrQuizCapacity        = errors.New("quiz storage is at capacity; retry later")
@@ -71,7 +70,6 @@ type AnswerReceipt struct {
 
 type userLookup interface {
 	Exists(context.Context, string) (bool, error)
-	OwnsProject(context.Context, string, string) (bool, error)
 }
 type quizSnapshot struct {
 	request  Request
@@ -96,10 +94,10 @@ func NewAnswerStore(repo AnswerRepository, users userLookup, generator Generator
 	return &AnswerStore{repo: repo, users: users, generator: generator, quizzes: make(map[string]quizSnapshot), capacity: 128, now: time.Now}
 }
 func validateQuizMetadata(r Request) error {
-	if r.UserID == "" && r.ProjectID == "" && r.ThreadID == "" && r.TurnID == "" {
+	if r.UserID == "" && r.ThreadID == "" && r.TurnID == "" {
 		return nil
 	}
-	if !user.ValidID(r.UserID) || !user.ValidID(r.ProjectID) {
+	if !user.ValidID(r.UserID) {
 		return ErrInvalidQuizMetadata
 	}
 	for _, value := range []string{r.ThreadID, r.TurnID} {
@@ -122,16 +120,6 @@ func (s *AnswerStore) requireUser(ctx context.Context, id string) error {
 	}
 	return ctx.Err()
 }
-func (s *AnswerStore) requireProject(ctx context.Context, userID, projectID string) error {
-	ok, err := s.users.OwnsProject(ctx, userID, projectID)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return ErrProjectNotFound
-	}
-	return ctx.Err()
-}
 func (s *AnswerStore) purgeExpired(now time.Time) {
 	for id, snapshot := range s.quizzes {
 		if !now.Before(snapshot.expires) {
@@ -150,9 +138,6 @@ func (s *AnswerStore) Generate(ctx context.Context, r Request) (Response, error)
 		return s.generator.Generate(ctx, r)
 	}
 	if err := s.requireUser(ctx, r.UserID); err != nil {
-		return Response{}, err
-	}
-	if err := s.requireProject(ctx, r.UserID, r.ProjectID); err != nil {
 		return Response{}, err
 	}
 	s.mu.Lock()
@@ -216,9 +201,6 @@ func (s *AnswerStore) Submit(ctx context.Context, input AnswerRequest) (AnswerRe
 	}
 	existing, err := s.repo.Find(ctx, input.UserID, input.QuizID, input.QuestionID)
 	if err == nil {
-		if err := s.requireProject(ctx, input.UserID, existing.ProjectID.Hex()); err != nil {
-			return AnswerReceipt{}, err
-		}
 		return sameAnswer(existing, input)
 	}
 	if !errors.Is(err, ErrAnswerNotFound) {
@@ -230,9 +212,6 @@ func (s *AnswerStore) Submit(ctx context.Context, input AnswerRequest) (AnswerRe
 	s.mu.Unlock()
 	if !ok || snapshot.request.UserID != input.UserID {
 		return AnswerReceipt{}, ErrQuizNotFound
-	}
-	if err := s.requireProject(ctx, input.UserID, snapshot.request.ProjectID); err != nil {
-		return AnswerReceipt{}, err
 	}
 	var selected *Question
 	for _, question := range snapshot.response.Questions {
@@ -246,8 +225,7 @@ func (s *AnswerStore) Submit(ctx context.Context, input AnswerRequest) (AnswerRe
 	}
 	userID, _ := bson.ObjectIDFromHex(input.UserID)
 	quizID, _ := bson.ObjectIDFromHex(input.QuizID)
-	projectID, _ := bson.ObjectIDFromHex(snapshot.request.ProjectID)
-	record := AnswerRecord{ID: bson.NewObjectID(), UserID: userID, QuizID: quizID, QuestionID: input.QuestionID, ProjectID: projectID, Answer: input.Answer, Graded: *input.Graded, Reasoning: strings.TrimSpace(input.Reasoning), QuizQuestion: selected.Question, Prompt: snapshot.request.Input, CreatedAt: s.now().UTC().Truncate(time.Millisecond)}
+	record := AnswerRecord{ID: bson.NewObjectID(), UserID: userID, QuizID: quizID, QuestionID: input.QuestionID, Answer: input.Answer, Graded: *input.Graded, Reasoning: strings.TrimSpace(input.Reasoning), QuizQuestion: selected.Question, Prompt: snapshot.request.Input, CreatedAt: s.now().UTC().Truncate(time.Millisecond)}
 	if err = ctx.Err(); err != nil {
 		return AnswerReceipt{}, err
 	}

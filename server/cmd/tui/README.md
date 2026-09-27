@@ -88,20 +88,21 @@ to `http://127.0.0.1:8080`; override it with
 The local evaluation and quiz APIs require no application login or session token.
 
 Evaluation goes directly to `/evaluations`; it never registers a profile.
-To save answers, select an existing user and a project owned by that user:
+To save answers, select the existing user who should own them:
 
 ```sh
-go run ./cmd/tui --user-id USER_OBJECT_ID --project-id PROJECT_OBJECT_ID
+go run ./cmd/tui --user-id USER_OBJECT_ID
 ```
 
 Use lowercase 24-character ObjectID hex values. The TUI remembers this selection
 per working directory in `cortisol/users.json` under `os.UserConfigDir()` (on macOS,
 `~/Library/Application Support`). These are existing record references, not
-credentials. The server reads users and projects and checks project ownership;
-it never creates or changes those records. Without a selection, chat and quizzes
+credentials. The server checks that the selected user exists; it never
+creates or changes that record. Without a selection, chat and quizzes
 work, with answers explicitly labeled local only, not saved.
 
-Saving graded answers requires migration 9 (the quiz answer validator); migration 8 created `quiz_answers` and indexes. Null-score evaluation
+Saving graded answers without a project uses migration 10, applied with approval.
+Migration 8 created `quiz_answers`; migration 9 added the graded fields. Null-score evaluation
 persistence requires migration 7. Migrations 7, 8, and 9 were applied with approval.
 Migrations never run on startup or during a request. Get explicit approval before
 applying any future migration.
@@ -139,8 +140,7 @@ For an ambiguous implementation request:
    in the quiz panel. Automatically open the first reference at its starting line
    in the existing VS Code window's editor. Ctrl+O cycles through additional
    references (or reopens the source if there is only one).
-5. Enter saves the answer individually when a user/project is selected, then runs
-   one isolated Codex grade. The terminal shows accuracy from 0 to 1 and an
+5. Enter runs one isolated Codex grade and saves the answer individually when a user is selected. The terminal shows accuracy from 0 to 1 and an
    explanation for wrong or partly right answers. Enter then advances.
    `/reveal` ends review early after Codex finishes.
 
@@ -171,7 +171,7 @@ it does not enter the coding conversation. An unavailable or invalid grade shows
 no score and keeps the answer for retry. Once graded, the TUI sends the answer,
 score, reasoning, and selected user to `/quiz-answers`; the server adds the
 authoritative question, original prompt, and timestamp. A failed save retains
-the grade for retry. Migration 9 was applied with approval, so graded saves are enabled. There
+the grade for retry. Migration 10 was applied with approval, so project-free graded saves are enabled. There
 are no batch grading calls or point rewards.
 Generation errors end the quiz with an explanation; no automatic retries occur.
 Drafts are restored afterward. Codex approvals and input requests remain available.

@@ -22,7 +22,6 @@ type File struct {
 
 type Request struct {
 	UserID       string               `json:"user_id,omitempty" bson:"user_id,omitempty"`
-	ProjectID    string               `json:"project_id,omitempty" bson:"project_id,omitempty"`
 	ThreadID     string               `json:"thread_id,omitempty" bson:"thread_id,omitempty"`
 	TurnID       string               `json:"turn_id,omitempty" bson:"turn_id,omitempty"`
 	Input        string               `json:"input" bson:"input"`

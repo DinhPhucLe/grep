@@ -11,12 +11,11 @@ import (
 )
 
 type userSelection struct {
-	UserID    string `json:"user_id"`
-	ProjectID string `json:"project_id"`
+	UserID string `json:"user_id"`
 }
 
 // Remember existing IDs per workspace. This does not create a user or project.
-func loadUserSelection(configDir, workspace, userID, projectID string) (userSelection, error) {
+func loadUserSelection(configDir, workspace, userID string) (userSelection, error) {
 	path := filepath.Join(configDir, "cortisol", "users.json")
 	selections := map[string]userSelection{}
 	data, err := os.ReadFile(path)
@@ -32,17 +31,15 @@ func loadUserSelection(configDir, workspace, userID, projectID string) (userSele
 		return userSelection{}, err
 	}
 	selection := selections[key]
-	explicit := userID != "" || projectID != ""
+	explicit := userID != ""
 	if explicit {
-		// Require both IDs when changing selection to avoid carrying another
-		// user's project into the new selection.
-		selection = userSelection{UserID: userID, ProjectID: projectID}
+		selection = userSelection{UserID: userID}
 	}
 	if !explicit && selection == (userSelection{}) {
 		return selection, nil
 	}
-	if !user.ValidID(selection.UserID) || !user.ValidID(selection.ProjectID) {
-		return userSelection{}, fmt.Errorf("select existing MongoDB IDs with both --user-id and --project-id; saved selections: %s", path)
+	if !user.ValidID(selection.UserID) {
+		return userSelection{}, fmt.Errorf("select an existing MongoDB user ID with --user-id; saved selections: %s", path)
 	}
 	if !explicit {
 		return selection, nil

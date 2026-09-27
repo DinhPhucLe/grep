@@ -14,7 +14,6 @@ type AnswerRecord struct {
 	UserID       bson.ObjectID `json:"user_id" bson:"user_id"`
 	QuizID       bson.ObjectID `json:"quiz_id" bson:"quiz_id"`
 	QuestionID   string        `json:"question_id" bson:"question_id"`
-	ProjectID    bson.ObjectID `json:"project_id" bson:"project_id"`
 	Answer       string        `json:"answer" bson:"answer"`
 	QuizQuestion string        `json:"quiz_question" bson:"quiz_question"`
 	Graded       float64       `json:"graded" bson:"graded"`

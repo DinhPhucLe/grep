@@ -71,8 +71,6 @@ func newHandler[T, R any](process func(context.Context, T) (R, error), timeout t
 			writeError(w, 400, "invalid_request", ErrInvalidQuizMetadata.Error())
 		case errors.Is(err, ErrUserNotFound):
 			writeError(w, 404, "user_not_found", ErrUserNotFound.Error())
-		case errors.Is(err, ErrProjectNotFound):
-			writeError(w, 404, "project_not_found", ErrProjectNotFound.Error())
 		case errors.Is(err, ErrQuizNotFound):
 			writeError(w, 404, "quiz_not_found", ErrQuizNotFound.Error())
 		case errors.Is(err, ErrQuestionNotFound):

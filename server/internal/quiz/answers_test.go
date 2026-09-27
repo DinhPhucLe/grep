@@ -58,19 +58,14 @@ func (m *memoryAnswers) Insert(ctx context.Context, r AnswerRecord) (AnswerRecor
 }
 
 type answerUsers struct {
-	wrongProject bool
-	exists       bool
-	err          error
+	exists bool
+	err    error
 }
 
-func (p answerUsers) OwnsProject(context.Context, string, string) (bool, error) {
-	return p.exists && !p.wrongProject, p.err
-}
 func (p answerUsers) Exists(context.Context, string) (bool, error) { return p.exists, p.err }
 func identifiedRequest() Request {
 	r := exampleRequest()
 	r.UserID = answerUser
-	r.ProjectID = "66f600000000000000000003"
 	r.ThreadID = "thread-1"
 	r.TurnID = "turn-1"
 	return r
@@ -106,7 +101,7 @@ func TestAnswerStoresAuthoritativeQuestionPromptAndGrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if receipt.Status != "graded" || r.QuizQuestion != exampleResult().Questions[0].Question || r.Prompt != exampleRequest().Input || r.Graded != 1 || r.ProjectID.Hex() != "66f600000000000000000003" || r.CreatedAt.IsZero() {
+	if receipt.Status != "graded" || r.QuizQuestion != exampleResult().Questions[0].Question || r.Prompt != exampleRequest().Input || r.Graded != 1 || r.CreatedAt.IsZero() {
 		t.Fatalf("incorrect snapshot: %+v", r)
 	}
 	if client.calls != 1 {
@@ -122,7 +117,7 @@ func TestAnswerStoresAuthoritativeQuestionPromptAndGrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	doc := bson.Raw(raw)
-	for _, field := range []string{"user_id", "project_id", "quiz_id"} {
+	for _, field := range []string{"user_id", "quiz_id"} {
 		if doc.Lookup(field).Type != bson.TypeObjectID {
 			t.Fatalf("%s must be a BSON ObjectID", field)
 		}
@@ -224,7 +219,7 @@ func TestIdentifiedGenerationRequiresMetadataAndUser(t *testing.T) {
 	if _, err := s.Generate(context.Background(), r); !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("unknown user: %v", err)
 	}
-	r.ProjectID = ""
+	r.UserID = ""
 	if _, err := s.Generate(context.Background(), r); !errors.Is(err, ErrInvalidQuizMetadata) {
 		t.Fatalf("missing metadata: %v", err)
 	}
@@ -421,32 +416,15 @@ func readyAnswerIndex() bson.D {
 	return answerCursor("test.quiz_answers", bson.D{{Key: "name", Value: "one_answer_per_user_question"}, {Key: "unique", Value: true}, {Key: "key", Value: bson.D{{Key: "user_id", Value: 1}, {Key: "quiz_id", Value: 1}, {Key: "question_id", Value: 1}}}})
 }
 
-func TestProjectOwnershipRequiredForGenerationAndSaving(t *testing.T) {
-	store, repo, client, response := answerFixture(t)
-	store.users = answerUsers{exists: true, wrongProject: true}
-	if _, err := store.Generate(context.Background(), identifiedRequest()); !errors.Is(err, ErrProjectNotFound) {
-		t.Fatalf("generation accepted wrong project: %v", err)
-	}
-	if client.calls != 1 {
-		t.Fatal("wrong project reached Snowflake")
-	}
-	if _, err := store.Submit(context.Background(), gradedRequest(response.QuizID, "answer")); !errors.Is(err, ErrProjectNotFound) {
-		t.Fatalf("save accepted wrong project: %v", err)
-	}
-	if len(repo.records) != 0 {
-		t.Fatal("saved answer for another user's project")
-	}
-}
-
-func TestRetryChecksCurrentProjectOwnership(t *testing.T) {
+func TestRetryChecksCurrentUserExistence(t *testing.T) {
 	store, _, _, response := answerFixture(t)
 	input := gradedRequest(response.QuizID, "answer")
 	if _, err := store.Submit(context.Background(), input); err != nil {
 		t.Fatal(err)
 	}
-	store.users = answerUsers{exists: true, wrongProject: true}
-	if _, err := store.Submit(context.Background(), input); !errors.Is(err, ErrProjectNotFound) {
-		t.Fatalf("retry ignored changed ownership: %v", err)
+	store.users = answerUsers{}
+	if _, err := store.Submit(context.Background(), input); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("retry ignored missing user: %v", err)
 	}
 }
 
@@ -493,3 +471,34 @@ func TestAnswerRejectsMissingOrInvalidGrade(t *testing.T) {
 }
 
 func gradePointer(value float64) *float64 { return &value }
+
+func TestUserOnlyQuizPersistsAnswerWithoutProject(t *testing.T) {
+	raw, _ := json.Marshal(exampleResult())
+	repo := &memoryAnswers{records: map[string]AnswerRecord{}}
+	store := NewAnswerStore(repo, answerUsers{exists: true}, NewService(&fakeCompleter{raw: string(raw)}, "model"))
+	request := exampleRequest()
+	request.UserID = answerUser
+	request.ThreadID = "thread-1"
+	request.TurnID = "turn-1"
+	response, err := store.Generate(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.QuizID == "" {
+		t.Fatal("identified quiz has no ID")
+	}
+	if _, err := store.Submit(context.Background(), gradedRequest(response.QuizID, "answer")); err != nil {
+		t.Fatal(err)
+	}
+	record, err := repo.Find(context.Background(), answerUser, response.QuizID, "q1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := bson.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bson.Raw(encoded).Lookup("project_id").Type != 0 {
+		t.Fatal("answer still stores project_id")
+	}
+}

@@ -44,6 +44,53 @@ func TestGradedAnswerMigrationRequiresConciseScoredRecord(t *testing.T) {
 	}
 }
 
+func TestUserOnlyAnswerMigrationDropsProjectRequirement(t *testing.T) {
+	raw, err := os.ReadFile("migrations/000010_user_only_quiz_answers.up.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var commands []struct {
+		CollMod       string `json:"collMod"`
+		DropIndexes   string `json:"dropIndexes"`
+		Index         string `json:"index"`
+		CreateIndexes string `json:"createIndexes"`
+		Indexes       []struct {
+			Name string         `json:"name"`
+			Key  map[string]int `json:"key"`
+		} `json:"indexes"`
+		Validator struct {
+			Schema struct {
+				Required   []string                   `json:"required"`
+				Properties map[string]json.RawMessage `json:"properties"`
+			} `json:"$jsonSchema"`
+		} `json:"validator"`
+	}
+	if err := json.Unmarshal(raw, &commands); err != nil {
+		t.Fatal(err)
+	}
+	if len(commands) != 3 || commands[0].CollMod != "quiz_answers" || commands[1].DropIndexes != "quiz_answers" || commands[1].Index != "user_project_answer_history" || commands[2].CreateIndexes != "quiz_answers" || len(commands[2].Indexes) != 1 || commands[2].Indexes[0].Name != "user_answer_history" {
+		t.Fatalf("unexpected migration commands: %+v", commands)
+	}
+	required := map[string]bool{}
+	for _, field := range commands[0].Validator.Schema.Required {
+		required[field] = true
+	}
+	if required["project_id"] {
+		t.Fatal("project_id is still required")
+	}
+	if _, exists := commands[0].Validator.Schema.Properties["project_id"]; exists {
+		t.Fatal("project_id is still permitted in new answer schema")
+	}
+	for _, field := range []string{"_id", "user_id", "quiz_id", "question_id", "answer", "quiz_question", "graded", "reasoning", "prompt", "created_at"} {
+		if !required[field] {
+			t.Fatalf("missing required field %s", field)
+		}
+	}
+	if commands[2].Indexes[0].Key["user_id"] != 1 || commands[2].Indexes[0].Key["created_at"] != -1 {
+		t.Fatal("history index does not serve user answers")
+	}
+}
+
 // CHECK THE COMMITTED MIGRATIONS WITHOUT CONNECTING TO ATLAS
 func TestCheckProjectMigrations(t *testing.T) {
 	if err := CheckMigrations("migrations"); err != nil {

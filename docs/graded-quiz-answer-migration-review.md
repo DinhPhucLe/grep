@@ -1,4 +1,7 @@
-# Migration 9: graded quiz answers (applied with approval)
+# Migration 9: original graded quiz answers (applied with approval)
+
+Migration 10 removed `project_id` from new answer records and was applied with approval. This
+file describes version 9 as applied; it is historical and should not be edited.
 
 Version 9 changes only the `quiz_answers` validator. It keeps the collection,
 the existing unique `(user_id, quiz_id, question_id)` index, the user/project

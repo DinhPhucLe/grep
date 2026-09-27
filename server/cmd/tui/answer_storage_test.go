@@ -45,7 +45,6 @@ func TestAnswerSaveFailureRetainsDraftAndRetryIsIndividual(t *testing.T) {
 	defer server.Close()
 	m := generatedFilesQuizModel(t, server.URL)
 	m.opts.UserID = testUserID
-	m.opts.ProjectID = "66f600000000000000000003"
 	m.quiz.quizID = "quiz-run"
 	m.quiz.result = twoQuestions()
 	m.quiz.phase = "question"
@@ -127,7 +126,7 @@ func TestQuizGenerationCarriesUserAndStorageID(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Error(err)
 		}
-		if request.UserID != testUserID || request.ProjectID != "66f600000000000000000003" || request.ThreadID != "thread" || request.TurnID != "turn" {
+		if request.UserID != testUserID || request.ThreadID != "thread" || request.TurnID != "turn" {
 			t.Errorf("missing quiz provenance: %+v", request)
 		}
 		json.NewEncoder(w).Encode(quiz.Response{QuizID: "quiz-run", Result: twoQuestions()})
@@ -135,7 +134,6 @@ func TestQuizGenerationCarriesUserAndStorageID(t *testing.T) {
 	defer server.Close()
 	m := generatedFilesQuizModel(t, server.URL)
 	m.opts.UserID = testUserID
-	m.opts.ProjectID = "66f600000000000000000003"
 	m.Update(m.startQuizGeneration()())
 	if m.quiz.quizID != "quiz-run" || m.quiz.phase != "question" {
 		t.Fatal("quiz storage ID was lost")
