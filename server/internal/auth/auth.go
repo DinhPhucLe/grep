@@ -227,7 +227,7 @@ func (s *Service) Authenticate(ctx context.Context, rawToken string) (Principal,
 func (s *Service) handleDeviceStart(w http.ResponseWriter, r *http.Request) {
 	start, err := s.client.StartDevice(r.Context(), s.cfg.GitHubClientID)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "github_error", "failed to start GitHub device flow")
+		writeError(w, http.StatusBadGateway, "github_error", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, start)
