@@ -14,7 +14,7 @@
 
 **Your team’s knowledge. Where you code.**
 
-Grep is a shared knowledge base for engineering teams—bringing organizational
+Grep is a shared knowledge base for engineering teams, bringing organizational
 context directly to developers and AI coding agents.
 
 Built for **ShellHacks 2026**.
@@ -36,7 +36,7 @@ Built for **ShellHacks 2026**.
 
 Grep puts searchable teammate knowledge inside the coding workflow. Retrieve an
 answer with its author and code context attached. Contribute a finding while
-it is still fresh. Give the next developer—or agent—a head start.
+it is still fresh. Give the next developer, or agent, a head start.
 
 ## Three core capabilities
 
