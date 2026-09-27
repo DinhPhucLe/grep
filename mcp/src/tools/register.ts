@@ -14,6 +14,7 @@ function backendConfig() {
   return {
     apiBase: process.env.CORTISOL_API_BASE?.trim() || 'http://127.0.0.1:8080',
     orgId: process.env.CORTISOL_ORG_ID?.trim() || 'demo-org',
+    sessionToken: process.env.CORTISOL_SESSION_TOKEN?.trim() || undefined,
   };
 }
 

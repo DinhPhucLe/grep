@@ -5,16 +5,19 @@ import '@mantine/core/styles.css';
 import '@mantine/charts/styles.css';
 import './styles/dashboard.css';
 import { App, resolveRoutePath, type AppRoute } from './App';
+import { AuthProvider } from './auth/AuthProvider';
 import { dashboardTheme } from './config/theme';
 import { loadEmployeePractice, loadOrgPractice } from './data/loadPracticeViews';
-
+import { AuthControls } from './components/AuthControls';
 const root = createRoot(document.getElementById('root')!);
 
 function render(content: React.ReactNode) {
   root.render(
     <StrictMode>
       <MantineProvider theme={dashboardTheme} forceColorScheme="light">
-        {content}
+        <AuthProvider>
+          {content}
+        </AuthProvider>
       </MantineProvider>
     </StrictMode>,
   );
@@ -40,7 +43,14 @@ async function loadRoute(): Promise<AppRoute> {
 }
 
 loadRoute()
-  .then((route) => render(<App route={route} />))
+  .then((route) =>
+    render(
+      <>
+        <AuthControls />
+        <App route={route} />
+      </>,
+    ),
+  )
   .catch((error: unknown) => {
     const message = error instanceof Error ? error.message : 'Unknown dashboard data error';
     render(

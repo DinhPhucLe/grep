@@ -1,3 +1,5 @@
+// Package orgknowledge stores org-scoped knowledge documents for Atlas vector search.
+// Embeddings are produced by Atlas Automated Embedding (voyage-code-4), not by this package.
 package orgknowledge
 
 import (
@@ -38,21 +40,23 @@ type SearchResult struct {
 }
 
 type postRequest struct {
-	Content        string            `json:"content"`
-	Topics         []string          `json:"topics"`
-	Properties     map[string]string `json:"properties"`
-	Authors        []Author          `json:"authors"`
-	OrganizationID string            `json:"organizationId"`
+	Content    string            `json:"content"`
+	Topics     []string          `json:"topics"`
+	Properties map[string]string `json:"properties"`
+	// Authors and OrganizationID are ignored when a session principal is present.
+	Authors        []Author `json:"authors"`
+	OrganizationID string   `json:"organizationId"`
 }
 
-// NewHandler serves GET/POST /api/v1/knowledge.
-func NewHandler(store Store) http.Handler {
+// NewHandler serves GET/POST /api/v1/knowledge. Requires auth.Principal on the request.
+// When hub is non-nil, successful inserts are published for SSE subscribers.
+func NewHandler(store Store, hub *Hub) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			handleGet(w, r, store)
 		case http.MethodPost:
-			handlePost(w, r, store)
+			handlePost(w, r, store, hub)
 		default:
 			w.Header().Set("Allow", "GET, POST")
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use GET or POST")
@@ -61,10 +65,15 @@ func NewHandler(store Store) http.Handler {
 }
 
 func handleGet(w http.ResponseWriter, r *http.Request, store Store) {
+	principal, ok := principalFrom(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
 	q := r.URL.Query()
-	orgID := strings.TrimSpace(q.Get("organizationId"))
-	if orgID == "" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "organizationId is required")
+	orgID := principal.OrganizationID.Hex()
+	if raw := strings.TrimSpace(q.Get("organizationId")); raw != "" && raw != orgID {
+		writeError(w, http.StatusBadRequest, "invalid_request", "organizationId does not match session organization")
 		return
 	}
 	k := 5
@@ -124,7 +133,12 @@ func handleGet(w http.ResponseWriter, r *http.Request, store Store) {
 	_ = json.NewEncoder(w).Encode(result)
 }
 
-func handlePost(w http.ResponseWriter, r *http.Request, store Store) {
+func handlePost(w http.ResponseWriter, r *http.Request, store Store, hub *Hub) {
+	principal, ok := principalFrom(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
 	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || media != "application/json" {
 		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "use application/json")
@@ -142,12 +156,22 @@ func handlePost(w http.ResponseWriter, r *http.Request, store Store) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "expected one knowledge document JSON object")
 		return
 	}
+	authorName := principal.Name
+	if principal.GitHubLogin != "" {
+		authorName = principal.Name
+		if authorName == "" {
+			authorName = principal.GitHubLogin
+		}
+	}
 	doc := Document{
-		Content:        input.Content,
-		Topics:         input.Topics,
-		Properties:     input.Properties,
-		Authors:        input.Authors,
-		OrganizationID: input.OrganizationID,
+		Content:    input.Content,
+		Topics:     input.Topics,
+		Properties: input.Properties,
+		Authors: []Author{{
+			UserID: principal.UserID.Hex(),
+			Name:   authorName,
+		}},
+		OrganizationID: principal.OrganizationID.Hex(),
 	}
 	if err := doc.ValidateForCreate(); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
@@ -157,6 +181,9 @@ func handlePost(w http.ResponseWriter, r *http.Request, store Store) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "persist_failed", "failed to store knowledge document")
 		return
+	}
+	if hub != nil {
+		hub.Publish(created)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

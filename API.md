@@ -171,13 +171,18 @@ One event = one completed practice **instance** (whole quiz), not one LLM questi
 Prefix: `/api/v1/knowledge`. CamelCase JSON aligned with [`mcp/contracts/knowledge.ts`](mcp/contracts/knowledge.ts).
 Semantic search uses Atlas Automated Embedding (`voyage-code-4`) on `knowledge_documents.content`.
 
+**Auth required:** `Authorization: Bearer <session token>` from GitHub device login.
+Unauthenticated calls return **401**. Organization scope and authors come from the
+session; client-supplied `organizationId` / `authors` on POST are ignored.
+If a GET query includes `organizationId` and it does not match the session org → **400**.
+
 ### Search
 
 `GET /api/v1/knowledge`
 
 | Query | Type | Required | Notes |
 |-------|------|----------|--------|
-| `organizationId` | string | yes | Org scope filter |
+| `organizationId` | string | no | Must match session org when set |
 | `query` | string | no | Natural language or code snippet |
 | `k` | int | no | Default **5**, max 50 |
 | `topics` | string (repeatable) | no | Topic filter |
@@ -191,7 +196,8 @@ Semantic search uses Atlas Automated Embedding (`voyage-code-4`) on `knowledge_d
 { "items": [ /* KnowledgeDocument */ ], "scores": [0.91] }
 ```
 
-**400** — missing `organizationId` or invalid `k` / dates.  
+**400** — invalid `k` / dates / org mismatch.  
+**401** — missing or invalid bearer.  
 **500** — `search_failed`.
 
 ### Post
@@ -203,12 +209,40 @@ Semantic search uses Atlas Automated Embedding (`voyage-code-4`) on `knowledge_d
 |-------|------|----------|
 | `content` | string | yes |
 | `topics` | string[] | yes (non-empty) |
-| `organizationId` | string | yes |
-| `authors` | `{ userId, name? }[]` | yes (at least one `userId`) |
 | `properties` | map | no |
 
+`organizationId` and `authors` are set server-side from the session.
+
 **201** — created document (includes `id`, timestamps).  
-**400** — `invalid_request`.
+**400** — `invalid_request`.  
+**401** — unauthorized.
+
+### Live events (SSE)
+
+`GET /api/v1/knowledge/events`  
+`Authorization: Bearer …`  
+`Accept: text/event-stream`
+
+Emits `event: knowledge.created` with JSON `{ "type": "knowledge.created", "item": <KnowledgeDocument> }`
+when a member of the same org posts. Heartbeat comments every ~15s.
+
+---
+
+## Auth API
+
+GitHub **device flow** (CLI-friendly). Env: `GITHUB_CLIENT_ID`, optional
+`GITHUB_CLIENT_SECRET`, `CORTISOL_DEFAULT_ORG_ID` (defaults to seeded NovaPay),
+`AUTH_SESSION_TTL` (default 720h).
+
+| Method | Path | Notes |
+|--------|------|--------|
+| POST | `/api/v1/auth/github/device` | Start device flow → `deviceCode`, `userCode`, `verificationUri`, `interval` |
+| POST | `/api/v1/auth/github/poll` | Body `{ "deviceCode" }`. **202** while pending; **200** `{ token, expiresAt, user, organization }` when done |
+| GET | `/api/v1/auth/me` | Bearer → current user + default org |
+| POST | `/api/v1/auth/logout` | Bearer → invalidate session (**204**) |
+
+On first login the user is upserted by `github_id` and **auto-joined** to the
+default organization. **Org invitations are deferred.**
 
 ---
 
@@ -227,7 +261,17 @@ Current application collections by migration version:
 | 2 | `projects` (+ index `projects_by_user`) |
 | 3 | `sessions` (+ index `sessions_by_project`) |
 | 4 | `evaluations` (prompt evaluation store; not dashboard practice) |
-| 5 | `organizations`, `organization_members`, `practice_events` (+ indexes) |
+| 5 | `evaluations` ambiguity score collMod |
+| 7 | `evaluations` intent collMod |
+| 8 | `quiz_answers` |
+| 9 | `graded_quiz_answers` |
+| 10 | `user_only_quiz_answers` |
+| 11 | `knowledge_records` |
+| 12 | `knowledge_documents` |
+| 13 | `auth_sessions`; `users` gains optional `github_id` / `github_login` / `avatar_url` |
+
+Note: `organizations` / `organization_members` / `practice_events` are required from
+application version ≥ 6 (see schema integrity); they may predate the current file set.
 
 Validators use `$jsonSchema` with `additionalProperties: false` and
 `validationAction: "error"`. Application code owns referential integrity
@@ -241,6 +285,20 @@ Validators use `$jsonSchema` with `additionalProperties: false` and
 | `name` | string | |
 | `mail` | string | |
 | `created_at` | date | |
+| `github_id` | string \| omit | sparse unique |
+| `github_login` | string \| omit | |
+| `avatar_url` | string \| omit | |
+
+### `auth_sessions`
+
+| Field | BSON | Notes |
+|-------|------|--------|
+| `_id` | objectId | |
+| `user_id` | objectId | → `users._id` |
+| `token_hash` | string | SHA-256 hex of bearer token |
+| `expires_at` | date | TTL index |
+| `created_at` | date | |
+| `user_agent` | string \| omit | |
 
 ### `projects`
 
