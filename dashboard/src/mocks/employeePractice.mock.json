@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "employee_practice.v1",
+  "generatedAt": "2026-09-26T18:00:00Z",
+  "subject": {
+    "userId": "660000000000000001010000",
+    "organizationId": "660000000000000004010000",
+    "practice": "lead_and_reveal",
+    "year": 2026
+  },
+  "activityCalendar": {
+    "status": "available",
+    "days": [
+      { "date": "2026-03-01", "count": 2, "intensity": 4 },
+      { "date": "2026-03-02", "count": 1, "intensity": 2 }
+    ]
+  },
+  "outcomePie": {
+    "status": "available",
+    "segments": [
+      { "label": "correct", "value": 2 },
+      { "label": "failed_reveal", "value": 1 }
+    ],
+    "display": { "primary": "2 correct / 1 failed" }
+  },
+  "metrics": [
+    {
+      "id": "total_instances",
+      "category": "significant",
+      "label": "Practice instances",
+      "status": "available",
+      "display": { "primary": "3" },
+      "visualization": { "type": "stat" }
+    }
+  ],
+  "summary": {
+    "status": "available",
+    "bullets": ["3 lead_and_reveal practice instances in 2026"]
+  }
+}

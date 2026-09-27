@@ -12,6 +12,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/mongodb"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -113,6 +114,13 @@ func Migrate(config Config, directory string) (uint, error) {
 	}
 	if dirty {
 		return version, fmt.Errorf("migration version %d is dirty", version)
+	}
+	names, err := client.Database(config.Database).ListCollectionNames(ctx, bson.D{})
+	if err != nil {
+		return version, fmt.Errorf("list collections after migrate: %w", err)
+	}
+	if missing := MissingCollectionsForVersion(version, names); len(missing) > 0 {
+		return version, SchemaIntegrityError(version, missing)
 	}
 	return version, nil
 }
