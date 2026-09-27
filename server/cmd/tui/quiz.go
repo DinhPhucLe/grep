@@ -3,11 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -23,7 +25,8 @@ type quizSession struct {
 	result            quiz.Result
 	baseline          fileSnapshot
 	turnID            string
-	phase             string // preparing, running, generating, question, reveal, done
+	phase             string // preparing, running, generating, question, saving, reveal, done
+	quizID            string
 	index             int
 	sourceIndex       int
 	editorSequence    int
@@ -43,6 +46,14 @@ type quizGeneratedMsg struct {
 	session *quizSession
 	request quiz.Request
 	result  quiz.Result
+	err     error
+	quizID  string
+}
+
+type quizAnswerSavedMsg struct {
+	session *quizSession
+	index   int
+	answer  string
 	err     error
 }
 
@@ -87,6 +98,11 @@ func (m *model) startQuizGeneration() tea.Cmd {
 	ctx, cancel := context.WithTimeout(m.traceContext(), 75*time.Second)
 	q.cancel = cancel
 	request, workspace, server, baseline := q.request, m.workspace, m.apiServer(), q.baseline
+	request.ParticipantID = m.opts.ParticipantID
+	if request.ParticipantID != "" {
+		request.ProjectID = fmt.Sprintf("%x", sha256.Sum256([]byte(filepath.Clean(workspace))))
+		request.ThreadID, request.TurnID = m.threadID, q.turnID
+	}
 	return func() tea.Msg {
 		defer cancel()
 		started := time.Now()
@@ -114,7 +130,10 @@ func (m *model) startQuizGeneration() tea.Cmd {
 		if err == nil {
 			err = response.Result.Validate(request)
 		}
-		return quizGeneratedMsg{session: q, request: request, result: response.Result, err: err}
+		if err == nil && request.ParticipantID != "" && len(response.Questions) > 0 && response.QuizID == "" {
+			err = fmt.Errorf("quiz API did not return a quiz ID for saving answers; update the server")
+		}
+		return quizGeneratedMsg{session: q, request: request, result: response.Result, err: err, quizID: response.QuizID}
 	}
 }
 
@@ -147,7 +166,7 @@ func postQuizJSON(ctx context.Context, server, route string, input, output any) 
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("quiz API unavailable or timed out")
+		return fmt.Errorf("API /%s unavailable or timed out", route)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
@@ -159,13 +178,13 @@ func postQuizJSON(ctx context.Context, server, route string, input, output any) 
 		}
 		if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&failure) == nil {
 			switch failure.Error.Code {
-			case "cortex_invalid_response", "cortex_error", "quiz_timeout":
+			case "cortex_invalid_response", "cortex_error", "quiz_timeout", "migration_required", "participant_not_found", "quiz_not_found", "answer_conflict":
 				if failure.Error.Message != "" && len(failure.Error.Message) <= 500 {
-					return fmt.Errorf("quiz API returned HTTP %d (%s): %s", resp.StatusCode, failure.Error.Code, failure.Error.Message)
+					return fmt.Errorf("API /%s returned HTTP %d (%s): %s", route, resp.StatusCode, failure.Error.Code, failure.Error.Message)
 				}
 			}
 		}
-		return fmt.Errorf("quiz API returned HTTP %d", resp.StatusCode)
+		return fmt.Errorf("API /%s returned HTTP %d", route, resp.StatusCode)
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
 	if err != nil || len(raw) > 1<<20 {
@@ -204,6 +223,7 @@ func (m *model) handleQuizMessage(msg tea.Msg) tea.Cmd {
 		q := m.quiz
 		q.request = v.request
 		q.result = v.result
+		q.quizID = v.quizID
 		if len(q.result.Questions) == 0 {
 			if len(q.request.Files) == 0 {
 				timing.Record(m.traceContext(), "quiz.skipped_no_files", q.generationStarted, nil, map[string]int{"files": 0})
@@ -228,6 +248,22 @@ func (m *model) handleQuizMessage(msg tea.Msg) tea.Cmd {
 			timing.Record(m.traceContext(), "quiz.prepare_to_ready", q.generationStarted, nil, nil)
 		}
 		return m.openQuizSource()
+	case quizAnswerSavedMsg:
+		if m.quiz != v.session || v.session.phase != "saving" || v.session.index != v.index {
+			return nil
+		}
+		q := m.quiz
+		m.busy = false
+		if v.err != nil {
+			q.phase = "question"
+			m.showQuizQuestion("Answer not saved: " + v.err.Error() + "\nYour answer is still in the composer. Press Enter to retry saving.")
+			return nil
+		}
+		if strings.TrimSpace(m.draft.Value()) == v.answer {
+			m.draft.Reset()
+		}
+		q.phase = "reveal"
+		m.showQuizQuestion("Your answer: " + v.answer + "\nSaved without grading. Press Enter to continue.")
 
 	}
 	return nil
@@ -292,6 +328,9 @@ func (m *model) showQuizQuestion(feedback string) {
 
 func (m *model) quizEnter(text string) tea.Cmd {
 	q := m.quiz
+	if q.phase == "saving" {
+		return nil
+	}
 	if text == "/reveal" && q.phase != "running" && q.phase != "preparing" {
 		if q.cancel != nil {
 			q.cancel()
@@ -319,9 +358,33 @@ func (m *model) quizEnter(text string) tea.Cmd {
 		m.status = "Answer is too long (maximum 8000 bytes)"
 		return nil
 	}
+	if m.opts.ParticipantID != "" {
+		if q.quizID == "" {
+			m.showQuizQuestion("Answer not saved: this quiz has no storage ID. Keep your answer and generate a new quiz with the updated server.")
+			return nil
+		}
+		q.phase = "saving"
+		m.busy = true
+		m.status = "Saving answer…"
+		m.showQuizQuestion("Saving your answer…")
+		m.status = "Saving answer…"
+		ctx, cancel := context.WithTimeout(m.traceContext(), 15*time.Second)
+		q.cancel = cancel
+		index, server := q.index, m.apiServer()
+		request := quiz.AnswerRequest{ParticipantID: m.opts.ParticipantID, QuizID: q.quizID, QuestionID: q.result.Questions[index].ID, Answer: text}
+		return func() tea.Msg {
+			defer cancel()
+			var receipt quiz.AnswerReceipt
+			err := postQuizJSON(ctx, server, "quiz-answers", request, &receipt)
+			if err == nil && (receipt.ID == "" || receipt.ParticipantID != request.ParticipantID || receipt.QuizID != request.QuizID || receipt.QuestionID != request.QuestionID || receipt.Status != "ungraded") {
+				err = fmt.Errorf("invalid answer save acknowledgment")
+			}
+			return quizAnswerSavedMsg{session: q, index: index, answer: text, err: err}
+		}
+	}
 	m.draft.Reset()
 	q.phase = "reveal"
-	m.showQuizQuestion("Your answer: " + text + "\nRecorded without grading. Press Enter to continue.")
+	m.showQuizQuestion("Your answer: " + text + "\nShown locally only; not saved or graded. Press Enter to continue.")
 	return nil
 }
 

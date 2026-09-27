@@ -19,6 +19,8 @@ type uiOptions struct {
 	EvaluationServer                string
 	ApprovalPolicy                  string
 	TimingLog                       string
+	ParticipantID                   string
+	ParticipantName                 string
 }
 type conversationItem struct {
 	key, kind, raw, status, command, output string
@@ -137,7 +139,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
-	case quizPreparedMsg, quizGeneratedMsg:
+	case quizPreparedMsg, quizGeneratedMsg, quizAnswerSavedMsg:
 		return m, m.handleQuizMessage(v)
 	case quizSourceOpenedMsg:
 		return m, m.handleQuizSourceOpened(v)

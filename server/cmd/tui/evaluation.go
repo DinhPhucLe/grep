@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cortisol-server/internal/evaluation"
+	"cortisol-server/internal/participant"
 	"cortisol-server/internal/timing"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -79,8 +80,18 @@ func (m *model) evaluatePrompt(prompt string) tea.Cmd {
 	if server == "" {
 		server = "http://127.0.0.1:8080"
 	}
+	profile := participant.Registration{ID: m.opts.ParticipantID, DisplayName: m.opts.ParticipantName}
 	return func() tea.Msg {
 		defer cancel()
+		if profile.ID != "" {
+			var registered participant.Profile
+			if err := postQuizJSON(ctx, server, "participants", profile, &registered); err != nil {
+				return evaluationDoneMsg{sequence: sequence, prompt: prompt, err: fmt.Errorf("participant registration failed: %w", err)}
+			}
+			if registered.ID != profile.ID {
+				return evaluationDoneMsg{sequence: sequence, prompt: prompt, err: fmt.Errorf("participant registration returned a different ID")}
+			}
+		}
 		record, err := fetchEvaluation(ctx, server, request)
 		return evaluationDoneMsg{sequence: sequence, prompt: prompt, record: record, err: err}
 	}

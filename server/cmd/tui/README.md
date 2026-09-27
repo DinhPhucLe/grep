@@ -86,6 +86,17 @@ Start the Go HTTP server before submitting prompts. The evaluation API defaults
 to `http://127.0.0.1:8080`; override it with
 `go run ./cmd/tui --evaluation-server http://localhost:8080` from `server/`.
 The local evaluation and quiz APIs require no application login or session token.
+
+The TUI creates a persistent anonymous UUID in `cortisol/participant.json` under
+the OS user config directory (`~/Library/Application Support` on macOS). Keep
+that file to keep the same participant history. It registers the profile before
+each prompt; `--participant-name "Ada"` optionally sets a display name. Omitting
+the flag on later runs preserves the name. No email, password, or login is used.
+The profile ID is a record identifier, not an access credential.
+
+Participant and answer collections require migration 8. Runtime registration
+reports `migration_required` rather than implicitly creating missing storage.
+Database migrations must be explicitly approved before being applied.
 Configure the server's Snowflake credentials in `server/.env` for Cortex calls.
 Evaluation includes the original prompt and recent user/assistant conversation
 (up to 50 messages within the API text limit); repository file contents are not
@@ -114,13 +125,21 @@ For an ambiguous implementation request:
 3. The server returns up to four distinct, grounded questions about the most
    consequential client-visible behaviors. Fewer is fine; never pad to four.
    If there are no suitable questions, silently return to chat.
-4. Show one question and its file/line references, without printing source files
+4. Show one question and its file/line references inside a muted-yellow dashed
+   ASCII box (plain borders with `--no-color`), without printing source files
    in the quiz panel. Automatically open the first reference at its starting line
    in the existing VS Code window's editor. Ctrl+O cycles through additional
    references (or reopens the source if there is only one).
-5. Enter records the answer locally without grading; Enter again advances and
+5. Enter saves the answer individually to MongoDB without grading; Enter again advances and
    opens the next question's source. After the last one, return to chat.
    `/reveal` ends review early after Codex finishes.
+
+The TUI keeps the answer draft until the server acknowledges the save. A failed
+save offers Enter to retry; the participant/quiz/question key prevents duplicate
+answers, including a retry after a lost response. Changing an already saved
+answer returns a conflict. This is a storage retry, not another graded attempt.
+Quiz IDs refer to temporary server snapshots: a restart or 24-hour expiry makes
+unsaved quizzes unavailable. Answers already saved remain in MongoDB.
 
 VS Code's `code` command must be on `PATH`. On macOS, use VS Code's Command
 Palette action **Shell Command: Install 'code' command in PATH** if needed.
@@ -136,7 +155,7 @@ made after generation can move its referenced lines. No files are rewritten,
 masked, or restored by the quiz. The server drops later questions with overlapping
 evidence to avoid repetitive coverage.
 
-There are no grading requests, correctness feedback, answer retries, points, or
+There are no grading requests, correctness feedback, graded answer retries, points, or
 answer batches. Future grading, if added, will be individual per question.
 Generation errors end the quiz with an explanation; no automatic retries occur.
 Drafts are restored afterward. Codex approvals and input requests remain available.

@@ -13,10 +13,11 @@ internal/cortex/config.go            Snowflake environment configuration
 internal/cortex/client.go            authenticated Cortex HTTP client
 internal/evaluation/model.go         request, response, and validation rules
 internal/evaluation/prompt.go        versioned clarity rubric and JSON schema
-internal/evaluation/service.go       classify, validate, persist only numeric evaluations
+internal/evaluation/service.go       classify, validate, persist all evaluations
 internal/evaluation/repository.go    MongoDB evaluations collection
 internal/evaluation/handler.go       HTTP request parsing and error mapping
 internal/db/migrations/000004_*      evaluations schema and timestamp index
+internal/db/migrations/000007_*      nullable scores for non-implementation messages
 internal/evaluation/examples/evaluation.json  runnable request payload
 ```
 
@@ -94,17 +95,20 @@ apply your application's retention/access rules to the evaluations collection.
 
 ## 3. Apply migrations and start
 
-From `server/`:
+From `server/`, validate files without connecting to MongoDB:
 
 ```sh
 go run ./cmd/migrate -check
-go run ./cmd/migrate
-go run ./cmd/server
 ```
 
 The fourth migration creates `evaluations` with schema validation and a timestamp
-index. Run migrations before serving requests. The server does not apply migrations
-at startup. The down migration drops that collection and its data.
+index. Migration 7 allows `not_applicable` with a null score and must be applied
+before storing those evaluations. Get explicit approval before executing migrations;
+`go run ./cmd/migrate` applies every pending migration, including the separate
+quiz-answer migration 8. The server does not apply migrations at startup.
+Migration 4's down migration drops the collection and its data. Migration 7's down
+migration restores the numeric-only validator without converting or deleting records;
+rollback after null-score records exist needs a separate approved data-handling plan.
 
 ## 4. Send an evaluation
 
@@ -135,7 +139,7 @@ A successful call returns HTTP **201**. Example (the judgment varies by input/mo
   "id": "66f600000000000000000001",
   "created_at": "2026-09-26T20:00:00Z",
   "model": "claude-sonnet-4-6",
-  "rubric_version": "implementation-intent-v2",
+  "rubric_version": "implementation-specificity-v3",
   "evaluation": {
     "verdict": "ambiguous",
     "summary": "The affected login behavior is unspecified.",
@@ -159,13 +163,19 @@ as confirmations, explanations, option selections, and status checks return:
 
 The score field is required even when null. Numeric scores apply only to explicit
 implementation/build/change requests. `clear` requires a score at or below 0.30
-and no gaps; `ambiguous` requires a score above 0.30 and 1–10 client-facing gaps.
+and no gaps; `ambiguous` requires a score above 0.30 and 1–10 consequential gaps.
+The specificity rubric considers concrete outcomes and scope, relevant implementation
+approach/constraints, and applicable examples or reusable code references. It uses
+details already supplied in conversation, without inventing repository facts or
+requiring unnecessary detail for narrow edits. Missing information must affect
+behavior, compatibility, or integration to count as a gap. Higher scores indicate
+more ambiguity. Quiz questions remain about client-visible behavior.
 A null score is accepted only with `not_applicable` and no gaps. The TUI sends
 unrated messages directly to Codex without an evaluation card or quiz.
-Unrated results return HTTP 200 without a database ID or storage operation.
-Numeric evaluations are saved and return HTTP 201 with their ID. No database
-migration is required for this distinction.
-For numeric evaluations, the original payload is persisted but omitted from the
+Both numeric and null-score evaluations are saved and return HTTP 201 with their
+database ID. Null is stored explicitly, not replaced with zero. Migration 7 is
+required for the nullable MongoDB validator.
+For all evaluations, the original payload is persisted but omitted from the
 HTTP response, which is sent only after MongoDB acknowledges the insert. There is no retrieval
 endpoint yet; the returned ID identifies the MongoDB record.
 

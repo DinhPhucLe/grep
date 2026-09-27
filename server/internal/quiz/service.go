@@ -15,6 +15,7 @@ import (
 )
 
 type Response struct {
+	QuizID        string `json:"quiz_id,omitempty"`
 	Model         string `json:"model"`
 	PromptVersion string `json:"prompt_version"`
 	Result
@@ -78,6 +79,7 @@ func (s *Service) Generate(ctx context.Context, request Request) (Response, erro
 // validation and rendering. A final newline terminates the last
 // line; it does not add an empty line, matching Result.Validate.
 func generationInput(request Request) ([]byte, error) {
+	request.ParticipantID, request.ProjectID, request.ThreadID, request.TurnID = "", "", "", ""
 	type numberedFile struct {
 		Path      string `json:"path"`
 		Content   string `json:"content"`

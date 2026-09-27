@@ -133,7 +133,7 @@ func TestDirectEvaluationHasNoWorkerQueue(t *testing.T) {
 	for i := 0; i < 6; i++ {
 		select {
 		case status := <-done:
-			if status != http.StatusOK {
+			if status != http.StatusCreated {
 				t.Fatalf("status=%d", status)
 			}
 		case <-time.After(time.Second):

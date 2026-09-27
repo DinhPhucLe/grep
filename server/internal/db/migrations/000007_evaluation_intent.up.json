@@ -1,0 +1,90 @@
+[
+  {
+    "collMod": "evaluations",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+          "_id",
+          "created_at",
+          "model",
+          "rubric_version",
+          "request",
+          "evaluation"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "_id": {
+            "bsonType": "objectId"
+          },
+          "created_at": {
+            "bsonType": "date"
+          },
+          "model": {
+            "bsonType": "string"
+          },
+          "rubric_version": {
+            "bsonType": "string"
+          },
+          "request": {
+            "bsonType": "object"
+          },
+          "evaluation": {
+            "bsonType": "object",
+            "required": [
+              "verdict",
+              "summary",
+              "ambiguity_score",
+              "gaps"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "verdict": {
+                "enum": [
+                  "clear",
+                  "ambiguous",
+                  "not_applicable"
+                ]
+              },
+              "summary": {
+                "bsonType": "string"
+              },
+              "ambiguity_score": {
+                "bsonType": [
+                  "double",
+                  "int",
+                  "long",
+                  "decimal",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1
+              },
+              "gaps": {
+                "bsonType": "array",
+                "items": {
+                  "bsonType": "object",
+                  "required": [
+                    "description",
+                    "consequence"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "bsonType": "string"
+                    },
+                    "consequence": {
+                      "bsonType": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "validationLevel": "strict",
+    "validationAction": "error"
+  }
+]

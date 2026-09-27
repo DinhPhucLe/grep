@@ -1,8 +1,9 @@
 # Client-facing implementation review
 
 `POST /quizzes` generates review questions for an ambiguous implementation request.
-The local API needs no application credentials. It never grades or stores answers.
-`/quiz-answers`, `/jobs`, and application authentication endpoints are removed.
+The local API needs no application credentials. It never grades answers.
+`POST /quiz-answers` saves individual ungraded answers. `/jobs`, `/quizzes/batch`,
+and application authentication endpoints are absent.
 
 ## Request
 
@@ -16,6 +17,10 @@ Send `Content-Type: application/json` with:
   `content`. Each file is at most 128,000 bytes; combined text is at most 256,000
   bytes and the HTTP body at most 1 MiB. The endpoint never reads local files.
 - `max_questions`: 1–4; omitted or zero means 4.
+- For answer storage: `participant_id` (registered UUID), `project_id`, `thread_id`,
+  and `turn_id`. The TUI provides these automatically. The project key identifies
+  the local workspace; it is not a reference to the older dashboard `projects`
+  collection. These metadata fields are not sent to Snowflake.
 
 ## Response
 
@@ -54,11 +59,24 @@ skips the quiz. No generated files also skips generation entirely.
 
 ## Answers and errors
 
-Answers are handled locally by the TUI, one question at a time. Each question opens
+Answers are submitted individually by the TUI. Each question opens
 its source reference in VS Code; Ctrl+O cycles additional references. Enter records
-the answer without correctness feedback; Enter again advances. Nothing is submitted
-for grading. Future grading is predefined as individual per question, not a
-client decision. No grading API, batch submission, worker queue, or score exists.
+the answer only after MongoDB acknowledges it; Enter again advances. Nothing is
+submitted for grading. Future grading is predefined as individual per question,
+not a client decision. No grading API, batch submission, worker queue, or score exists.
+
+Identified generation returns `quiz_id`. The server holds at most 128 unanswered
+quiz snapshots for 24 hours. `POST /quiz-answers` accepts only `participant_id`,
+`quiz_id`, `question_id`, and `answer` (1–8000 bytes). It looks up the question and
+code from the server snapshot, and stores a self-contained `quiz_answers` record
+with status `ungraded`. Duplicate identical submissions return the existing
+receipt; different text for an answered question returns 409. Saved receipts can
+be recovered by resubmitting the same answer even after a server restart. Unsaved
+quiz snapshots do not survive restart. There is no public answer-list endpoint.
+
+Migration 8 creates the required collections and indexes. Runtime code does not
+create missing collections or run migrations. Existing unidentified callers can
+still generate transient quizzes, but cannot save answers from those quizzes.
 
 Generation uses one Cortex call with a deadline and no automatic retry. Invalid
 output returns 502 with a safe validation reason; provider failures return 502 and

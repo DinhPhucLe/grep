@@ -9,8 +9,8 @@ import (
 func TestLocalAPIRoutesNeedNoCredentials(t *testing.T) {
 	mux := http.NewServeMux()
 	endpoint := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	registerRoutes(mux, endpoint, endpoint)
-	for _, route := range []string{"/evaluations", "/quizzes"} {
+	registerRoutes(mux, endpoint, endpoint, endpoint, endpoint)
+	for _, route := range []string{"/evaluations", "/quizzes", "/participants", "/quiz-answers"} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest(http.MethodPost, route, nil))
 		if w.Code != http.StatusNoContent {
@@ -22,8 +22,8 @@ func TestLocalAPIRoutesNeedNoCredentials(t *testing.T) {
 func TestRemovedExperimentalRoutesAreUnavailable(t *testing.T) {
 	mux := http.NewServeMux()
 	endpoint := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Error("removed endpoint reached application") })
-	registerRoutes(mux, endpoint, endpoint)
-	for _, route := range []string{"/quiz-answers", "/jobs", "/auth/login", "/auth/register"} {
+	registerRoutes(mux, endpoint, endpoint, endpoint, endpoint)
+	for _, route := range []string{"/quizzes/batch", "/jobs", "/auth/login", "/auth/register"} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest(http.MethodPost, route, nil))
 		if w.Code != http.StatusNotFound {

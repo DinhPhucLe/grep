@@ -58,9 +58,6 @@ func (s *Service) Evaluate(ctx context.Context, request Request) (Record, error)
 		return Record{}, cortex.ErrInvalidResponse
 	}
 	record := Record{CreatedAt: time.Now().UTC(), Model: s.model, RubricVersion: rubricVersion, Request: request, Evaluation: body}
-	if body.AmbiguityScore == nil {
-		return record, nil
-	}
 	record.ID = bson.NewObjectID()
 	insertStarted := time.Now()
 	err = s.repository.Insert(ctx, record)

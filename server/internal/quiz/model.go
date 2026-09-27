@@ -16,18 +16,22 @@ const MaxQuestions = 4
 // File contains the generated version of a file. Line references are one-based
 // and relative to Content, which must be the complete file, not a diff.
 type File struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
+	Path    string `json:"path" bson:"path"`
+	Content string `json:"content" bson:"content"`
 }
 
 type Request struct {
-	Input        string               `json:"input"`
-	Context      string               `json:"context,omitempty"`
-	Conversation []evaluation.Message `json:"conversation,omitempty"`
-	Evaluation   evaluation.Body      `json:"evaluation"`
-	Files        []File               `json:"files"`
+	ParticipantID string               `json:"participant_id,omitempty" bson:"participant_id,omitempty"`
+	ProjectID     string               `json:"project_id,omitempty" bson:"project_id,omitempty"`
+	ThreadID      string               `json:"thread_id,omitempty" bson:"thread_id,omitempty"`
+	TurnID        string               `json:"turn_id,omitempty" bson:"turn_id,omitempty"`
+	Input         string               `json:"input" bson:"input"`
+	Context       string               `json:"context,omitempty" bson:"context,omitempty"`
+	Conversation  []evaluation.Message `json:"conversation,omitempty" bson:"conversation,omitempty"`
+	Evaluation    evaluation.Body      `json:"evaluation" bson:"evaluation"`
+	Files         []File               `json:"files" bson:"files"`
 	// Zero/omitted defaults to four. Callers may lower the cap to any value from one to four.
-	MaxQuestions int `json:"max_questions,omitempty"`
+	MaxQuestions int `json:"max_questions,omitempty" bson:"max_questions,omitempty"`
 }
 
 func (r Request) limit() int {
@@ -38,6 +42,9 @@ func (r Request) limit() int {
 }
 
 func (r Request) Validate() error {
+	if err := validateQuizMetadata(r); err != nil {
+		return err
+	}
 	if err := (evaluation.Request{Input: r.Input, Context: r.Context, Conversation: r.Conversation}).Validate(); err != nil {
 		return err
 	}
@@ -75,23 +82,23 @@ func (r Request) Validate() error {
 }
 
 type Evidence struct {
-	FilePath  string `json:"file_path"`
-	StartLine int    `json:"start_line"`
-	EndLine   int    `json:"end_line"`
+	FilePath  string `json:"file_path" bson:"file_path"`
+	StartLine int    `json:"start_line" bson:"start_line"`
+	EndLine   int    `json:"end_line" bson:"end_line"`
 }
 
 type Question struct {
-	ID         string     `json:"id"`
-	Topic      string     `json:"topic"`
-	Question   string     `json:"question"`
-	GapIndices []int      `json:"gap_indices"`
-	Evidence   []Evidence `json:"evidence"`
+	ID         string     `json:"id" bson:"id"`
+	Topic      string     `json:"topic" bson:"topic"`
+	Question   string     `json:"question" bson:"question"`
+	GapIndices []int      `json:"gap_indices" bson:"gap_indices"`
+	Evidence   []Evidence `json:"evidence" bson:"evidence"`
 }
 
 type Result struct {
-	Questions []Question `json:"questions"`
+	Questions []Question `json:"questions" bson:"questions"`
 	// Nonempty only when the supplied implementation supports no grounded quiz.
-	NoQuestionsReason string `json:"no_questions_reason"`
+	NoQuestionsReason string `json:"no_questions_reason" bson:"no_questions_reason"`
 }
 
 // Validate checks grounding references and cardinality, not semantic correctness.

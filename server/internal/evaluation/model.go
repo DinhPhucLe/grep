@@ -82,7 +82,7 @@ func (b Body) Validate() error {
 }
 
 type Record struct {
-	ID            bson.ObjectID `json:"id,omitzero" bson:"_id"`
+	ID            bson.ObjectID `json:"id" bson:"_id"`
 	CreatedAt     time.Time     `json:"created_at" bson:"created_at"`
 	Model         string        `json:"model" bson:"model"`
 	RubricVersion string        `json:"rubric_version" bson:"rubric_version"`

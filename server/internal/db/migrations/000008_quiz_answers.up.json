@@ -1,0 +1,315 @@
+[
+  {
+    "create": "quiz_answers",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+          "_id",
+          "user_id",
+          "project_id",
+          "quiz_id",
+          "question_id",
+          "thread_id",
+          "turn_id",
+          "answer",
+          "status",
+          "created_at",
+          "model",
+          "prompt_version",
+          "question",
+          "request"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "_id": {
+            "bsonType": "objectId"
+          },
+          "user_id": {
+            "bsonType": "objectId",
+            "description": "References existing users._id. Application checks existence; this is not authentication."
+          },
+          "project_id": {
+            "bsonType": "objectId",
+            "description": "References existing projects._id. Application checks existence and that projects.user_id matches user_id."
+          },
+          "quiz_id": {
+            "bsonType": "objectId",
+            "description": "Server-generated quiz run identifier, shared by answers from that run. No quizzes collection is created by this migration."
+          },
+          "question_id": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "pattern": "^q[1-9][0-9]*$"
+          },
+          "thread_id": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Codex thread identifier; not a foreign key to sessions."
+          },
+          "turn_id": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Codex implementation turn identifier."
+          },
+          "answer": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 8000,
+            "description": "Original user answer. Application enforces nonblank content and an 8000-byte limit."
+          },
+          "status": {
+            "enum": [
+              "ungraded"
+            ],
+            "description": "No grading or embedding fields are introduced in this migration."
+          },
+          "created_at": {
+            "bsonType": "date",
+            "description": "Server-assigned time of first successful submission; immutable on retries."
+          },
+          "model": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Quiz generation model, not a grading model."
+          },
+          "prompt_version": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Quiz-generation prompt version."
+          },
+          "question": {
+            "bsonType": "object",
+            "required": [
+              "id",
+              "topic",
+              "question",
+              "gap_indices",
+              "evidence"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "bsonType": "string",
+                "minLength": 1,
+                "maxLength": 32
+              },
+              "topic": {
+                "bsonType": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "question": {
+                "bsonType": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "gap_indices": {
+                "bsonType": "array",
+                "minItems": 1,
+                "maxItems": 10,
+                "uniqueItems": true,
+                "items": {
+                  "bsonType": "int",
+                  "minimum": 0
+                }
+              },
+              "evidence": {
+                "bsonType": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "items": {
+                  "bsonType": "object",
+                  "required": [
+                    "file_path",
+                    "start_line",
+                    "end_line"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "file_path": {
+                      "bsonType": "string",
+                      "minLength": 1,
+                      "maxLength": 1024,
+                      "description": "Normalized repository-relative path in the saved files. Application validates path safety and existence."
+                    },
+                    "start_line": {
+                      "bsonType": "int",
+                      "minimum": 1
+                    },
+                    "end_line": {
+                      "bsonType": "int",
+                      "minimum": 1
+                    }
+                  },
+                  "description": "One-based inclusive source range; the application checks start_line <= end_line and snapshot bounds."
+                }
+              }
+            },
+            "description": "Server-issued question snapshot. The application requires id to match question_id and validates gap/evidence references."
+          },
+          "request": {
+            "bsonType": "object",
+            "required": [
+              "input",
+              "evaluation",
+              "files"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "input": {
+                "bsonType": "string",
+                "minLength": 1,
+                "maxLength": 32000
+              },
+              "context": {
+                "bsonType": "string",
+                "minLength": 0,
+                "maxLength": 128000
+              },
+              "conversation": {
+                "bsonType": "array",
+                "maxItems": 50,
+                "items": {
+                  "bsonType": "object",
+                  "required": [
+                    "role",
+                    "content"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "role": {
+                      "enum": [
+                        "user",
+                        "assistant"
+                      ]
+                    },
+                    "content": {
+                      "bsonType": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              },
+              "evaluation": {
+                "bsonType": "object",
+                "required": [
+                  "verdict",
+                  "summary",
+                  "ambiguity_score",
+                  "gaps"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "verdict": {
+                    "enum": [
+                      "ambiguous"
+                    ]
+                  },
+                  "summary": {
+                    "bsonType": "string",
+                    "minLength": 1
+                  },
+                  "ambiguity_score": {
+                    "bsonType": [
+                      "double",
+                      "int",
+                      "long",
+                      "decimal"
+                    ],
+                    "minimum": 0.3,
+                    "exclusiveMinimum": true,
+                    "maximum": 1
+                  },
+                  "gaps": {
+                    "bsonType": "array",
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "items": {
+                      "bsonType": "object",
+                      "required": [
+                        "description",
+                        "consequence"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "description": {
+                          "bsonType": "string",
+                          "minLength": 1
+                        },
+                        "consequence": {
+                          "bsonType": "string",
+                          "minLength": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "files": {
+                "bsonType": "array",
+                "minItems": 1,
+                "maxItems": 30,
+                "items": {
+                  "bsonType": "object",
+                  "required": [
+                    "path",
+                    "content"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "bsonType": "string",
+                      "minLength": 1,
+                      "maxLength": 1024
+                    },
+                    "content": {
+                      "bsonType": "string",
+                      "minLength": 1,
+                      "maxLength": 128000
+                    }
+                  }
+                }
+              },
+              "max_questions": {
+                "bsonType": "int",
+                "minimum": 0,
+                "maximum": 4
+              }
+            },
+            "description": "Immutable generation context and source snapshot from the server. Identity lives at the document root, not inside this snapshot. Application checks text byte limits and combined payload size."
+          }
+        }
+      }
+    },
+    "validationLevel": "strict",
+    "validationAction": "error"
+  },
+  {
+    "createIndexes": "quiz_answers",
+    "indexes": [
+      {
+        "key": {
+          "user_id": 1,
+          "quiz_id": 1,
+          "question_id": 1
+        },
+        "name": "one_answer_per_user_question",
+        "unique": true
+      },
+      {
+        "key": {
+          "user_id": 1,
+          "project_id": 1,
+          "created_at": -1
+        },
+        "name": "user_project_answer_history"
+      }
+    ]
+  }
+]

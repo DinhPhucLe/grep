@@ -45,6 +45,29 @@ func (m *model) accent(s, color string) string {
 	}
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Bold(true).Render(s)
 }
+
+func (m *model) quizPanelView(raw string) string {
+	width := max(1, m.width-2)
+	text := strings.ReplaceAll(safeText(raw), "\t", "    ")
+	border := lipgloss.NewStyle()
+	if !m.opts.NoColor {
+		border = border.Foreground(lipgloss.Color("#BFA65A"))
+	}
+	// Very narrow terminals still get separators without overflowing the viewport.
+	if width < 5 {
+		rule := border.Render(strings.Repeat("-", width))
+		return rule + "\n" + ansi.Wrap(text, width, "") + "\n" + rule
+	}
+	inner := width - 4
+	rule := border.Render("+" + strings.Repeat("-", width-2) + "+")
+	side := border.Render("|")
+	lines := strings.Split(ansi.Wrap(text, inner, ""), "\n")
+	for n, line := range lines {
+		lines[n] = side + " " + line + strings.Repeat(" ", max(0, inner-ansi.StringWidth(line))) + " " + side
+	}
+	return rule + "\n" + strings.Join(lines, "\n") + "\n" + rule
+}
+
 func (m *model) markdown(i *conversationItem) string {
 	w := max(1, m.width-2)
 	if i.cache != "" && i.cacheWidth == w && i.cacheRaw == i.raw {
@@ -103,7 +126,7 @@ func (m *model) refresh() {
 			if m.quiz != nil && i == m.quiz.panel {
 				quizLine = strings.Count(b.String(), "\n")
 			}
-			b.WriteString(ansi.Wrap(safeText(i.raw), max(1, m.width-2), ""))
+			b.WriteString(m.quizPanelView(i.raw))
 		case "userMessage":
 			b.WriteString(m.accent(m.role(true), "6") + "\n" + ansi.Wrap(safeText(i.raw), max(1, m.width-2), ""))
 		case "agentMessage":

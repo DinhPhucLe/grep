@@ -16,8 +16,8 @@ func TestUnratedConversationGoesDirectlyToCodex(t *testing.T) {
 			w.WriteHeader(404)
 			return
 		}
-		w.WriteHeader(200)
-		fmt.Fprint(w, `{"evaluation":{"verdict":"not_applicable","summary":"Confirmation","ambiguity_score":null,"gaps":[]}}`)
+		w.WriteHeader(201)
+		fmt.Fprint(w, `{"id":"66f600000000000000000001","evaluation":{"verdict":"not_applicable","summary":"Confirmation","ambiguity_score":null,"gaps":[]}}`)
 	}))
 	defer server.Close()
 	for _, prompt := range []string{"yes", "go ahead", "thanks", "explain that", "individually"} {
