@@ -81,6 +81,40 @@ sure the Codex CLI is installed, authenticated, and available on `PATH`.
 Type a message and press Enter; use `/quit` or Ctrl+C to exit. For TUI logging
 and protocol details, see [`server/cmd/tui/README.md`](server/cmd/tui/README.md).
 
+## Verify minimal knowledge storage
+
+From `server/`, run the offline tests:
+
+```powershell
+go test ./internal/knowledge -count=1 -v
+go test ./internal/db -run TestKnowledge -count=1 -v
+go vet ./...
+```
+
+These check validation, exact text/vector serialization, invalid repository
+arguments, and the new migration pair. The live repository test prints `SKIP`
+unless explicitly configured. If Windows denies access to the default Go cache,
+set `$env:GOCACHE = "$PWD\..\.superpowers\go-build"` before running tests.
+
+To exercise actual persistence, ownership rejection, ordering, and MongoDB
+validators against a **disposable MongoDB instance**:
+
+```powershell
+$env:KNOWLEDGE_TEST_MONGODB_URI = "mongodb://127.0.0.1:27017"
+$env:KNOWLEDGE_TEST_DATABASE = "cortisol_test_knowledge"
+go test ./internal/knowledge -run TestMongoRepositoryIntegration -count=1 -v
+```
+
+The integration test never loads `server/.env`. It creates a uniquely suffixed
+database under the specified `cortisol_test_` prefix and drops only that database
+afterwards. Its vectors are synthetic storage fixtures.
+
+`go test ./...` and `go run ./cmd/migrate -check` currently report the existing
+duplicate version-5 migration error. The earlier repair was reverted on request;
+the new knowledge migration is verified independently. Full migration deployment
+needs a separate resolution of that baseline. See [API.md](API.md) for the
+minimal record fields and repository calls.
+
 ## Snowflake Local Development Setup
 
 The server uses the Snowflake Cortex REST API to evaluate prompts. This

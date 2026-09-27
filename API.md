@@ -255,6 +255,58 @@ Optional nullable fields: `answer_quality`, `relevance`.
 
 Used by `/evaluations` / jobs (Cortex), not by the practice dashboard views.
 
+### `knowledge_records`
+
+Minimal project-scoped storage in `server/internal/knowledge`:
+
+| Field | Meaning |
+| --- | --- |
+| `_id`, `project_id` | ObjectId identity and existing project |
+| `source` | Origin label or locator, e.g. `conversation:local-1` |
+| `topic` | Short human-supplied label |
+| `content` | Exact source text |
+| `embedding`, `embedding_model` | Optional vector and its model label, supplied together |
+| `created_at` | Server-generated UTC BSON date |
+
+The repository exposes `Create(ctx, callerID, projectID, Input)`,
+`Get(ctx, callerID, projectID, recordID)`, and
+`List(ctx, callerID, projectID, limit)`. Every operation checks the current
+`projects.user_id` owner. Caller IDs must come from a trusted authenticated or
+administrative context; accepting an ID is not authentication. Missing and
+foreign projects both return `knowledge.ErrNotFound`. List accepts 1–100 and
+orders by `created_at` descending, then `_id` descending. Each create inserts
+a new record; repeated source labels are allowed.
+
+Example input (within Go code that already has a database and trusted caller):
+
+```go
+repo := knowledge.NewMongoRepository(database)
+record, err := repo.Create(ctx, callerID, projectID, knowledge.Input{
+    Source: "conversation:local-1",
+    Topic: "Deployment",
+    Content: "Preserve the original text here.",
+})
+```
+
+Validation preserves text without trimming or truncating it. Nonblank UTF-8
+strings are required: source ≤1024 bytes, topic/model ≤256 bytes, content ≤1 MiB.
+An optional vector has 1–4096 finite values and cannot be all zero. MongoDB
+validates basic types, character limits, and paired embedding fields; Go also
+enforces byte limits and finite/nonzero vectors. Vector length supplies its
+dimension count. No embedding provider is selected or called.
+
+This is storage scaffolding only: no public endpoint, TUI capture, embedding
+generation, semantic search, revision tracking, or indexing worker is wired in.
+Migration `000007_knowledge_records` creates just this collection and an ordinary
+project/date/ID index. Its down migration drops the collection and all its data;
+use only after a separate rollback decision and backup.
+
+**Migration baseline blocker:** the original two version-5 migration pairs remain
+because the baseline repair was reverted at the user's request. The full offline
+migration check fails on that existing duplication. The new pair is tested in
+isolation, but full deployment must wait for a separately agreed reconciliation.
+No migrations or seed writes were performed for this milestone.
+
 ---
 
 ## Developing the database
