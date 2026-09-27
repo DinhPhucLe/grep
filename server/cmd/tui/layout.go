@@ -88,6 +88,20 @@ func (m *model) footer() string {
 	if m.quitMode {
 		return m.shortcutStyle("Command: " + m.quitDraft + " · Enter run · Esc cancel")
 	}
+	// Prefer success / command feedback over a stale device-flow banner.
+	if strings.HasPrefix(m.clipboardNotice, "Logged in as") ||
+		strings.HasPrefix(m.clipboardNotice, "Waiting for GitHub") ||
+		strings.HasPrefix(m.clipboardNotice, "Run /login") ||
+		strings.HasPrefix(m.clipboardNotice, "Usage:") ||
+		strings.HasPrefix(m.clipboardNotice, "Knowledge search") ||
+		strings.HasPrefix(m.clipboardNotice, "Send learning") ||
+		strings.HasPrefix(m.clipboardNotice, "Posted learning") ||
+		strings.HasPrefix(m.clipboardNotice, "Searching knowledge") {
+		return ansi.Truncate(safeText(m.clipboardNotice), m.width, "")
+	}
+	if p := m.loginPrompt(); p != "" {
+		return ansi.Truncate(safeText(p), m.width, "")
+	}
 	if m.clipboardNotice != "" {
 		return ansi.Truncate(safeText(m.clipboardNotice), m.width, "")
 	}
@@ -212,6 +226,8 @@ Ctrl+V / Insert: paste into the composer
 /quit: exit (also works during approvals)
 /login: GitHub device login
 /logout: clear local session
+/search-learning <query>: search org knowledge (requires /login)
+/send-learning topic1,topic2 | content: post a learning (requires /login)
 F1 or Esc: close this help`
 
 func (m *model) helpView() string {

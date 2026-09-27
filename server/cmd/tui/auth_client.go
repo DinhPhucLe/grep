@@ -83,7 +83,16 @@ func postJSON(ctx context.Context, url string, body any, token string, dest any)
 	return err
 }
 
+func getJSON(ctx context.Context, url string, token string, dest any) error {
+	_, err := doJSON(ctx, http.MethodGet, url, nil, token, dest)
+	return err
+}
+
 func postJSONStatus(ctx context.Context, url string, body any, token string, dest any) (string, error) {
+	return doJSON(ctx, http.MethodPost, url, body, token, dest)
+}
+
+func doJSON(ctx context.Context, method, url string, body any, token string, dest any) (string, error) {
 	var reader io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -92,7 +101,7 @@ func postJSONStatus(ctx context.Context, url string, body any, token string, des
 		}
 		reader = bytes.NewReader(raw)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, reader)
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
 	if err != nil {
 		return "", err
 	}

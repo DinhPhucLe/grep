@@ -4,7 +4,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from '../auth/AuthProvider';
 import { AuthControls } from '../components/AuthControls';
 import { dashboardTheme } from '../config/theme';
-import { storeSession } from '../auth/session';
+import { storeSession, loadStoredSession } from '../auth/session';
 
 function renderAuth() {
   return render(
@@ -112,5 +112,62 @@ describe('AuthControls', () => {
       expect(screen.getByText('ABCD-EFGH')).toBeInTheDocument();
     });
     expect(screen.getByText('https://github.com/login/device')).toBeInTheDocument();
+  });
+
+  it('reflects session in UI after GitHub authorize completes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let polls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/auth/github/device')) {
+          return new Response(
+            JSON.stringify({
+              deviceCode: 'dev',
+              userCode: 'DONE-CODE',
+              verificationUri: 'https://github.com/login/device',
+              expiresIn: 900,
+              interval: 1,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/v1/auth/github/poll')) {
+          polls += 1;
+          if (polls < 2) {
+            return new Response(
+              JSON.stringify({
+                error: { code: 'authorization_pending', message: 'waiting' },
+              }),
+              { status: 202, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              token: 'sess-web',
+              expiresAt: new Date(Date.now() + 60_000).toISOString(),
+              user: { id: 'u1', name: 'Ada', githubLogin: 'ada' },
+              organization: { id: 'o1', name: 'NovaPay' },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('nope', { status: 404 });
+      }),
+    );
+
+    renderAuth();
+    fireEvent.click(await screen.findByRole('button', { name: /Sign in/i }));
+    await waitFor(() => {
+      expect(screen.getByText('DONE-CODE')).toBeInTheDocument();
+    });
+
+    await vi.advanceTimersByTimeAsync(2500);
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Account menu for ada/i)).toBeInTheDocument();
+    });
+    expect(loadStoredSession()?.token).toBe('sess-web');
+    vi.useRealTimers();
   });
 });

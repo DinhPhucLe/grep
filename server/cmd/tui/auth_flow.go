@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -25,17 +27,20 @@ type authDeviceMsg struct {
 type authPollTickMsg struct {
 	deviceCode string
 	interval  time.Duration
+	gen       int
 }
 
 type authPendingMsg struct {
 	deviceCode string
 	interval  time.Duration
+	gen       int
 }
 
 type authSessionMsg struct {
 	creds sessionCredentials
 	err   error
 	code  string
+	gen   int
 }
 
 type authLogoutMsg struct {
@@ -66,29 +71,45 @@ func (m *model) beginLogin() tea.Cmd {
 	}
 }
 
-func (m *model) pollLogin(deviceCode string, interval time.Duration) tea.Cmd {
+// pollIntervalFromServer uses the device-flow interval GitHub/API returned.
+// Floor at 1s only to avoid a zero/negative tick; never invent a faster cadence.
+func pollIntervalFromServer(seconds int) time.Duration {
+	if seconds < 1 {
+		seconds = 5
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func (m *model) pollLogin(deviceCode string, interval time.Duration, gen int) tea.Cmd {
 	if interval < time.Second {
-		interval = 5 * time.Second
+		interval = time.Second
 	}
 	return tea.Tick(interval, func(time.Time) tea.Msg {
-		return authPollTickMsg{deviceCode: deviceCode, interval: interval}
+		return authPollTickMsg{deviceCode: deviceCode, interval: interval, gen: gen}
 	})
 }
 
-func (m *model) doPoll(deviceCode string, interval time.Duration) tea.Cmd {
+func (m *model) doPoll(deviceCode string, interval time.Duration, gen int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		session, code, err := pollGitHubDevice(ctx, deviceCode)
 		if err != nil {
-			return authSessionMsg{err: err, code: code}
+			return authSessionMsg{err: err, code: code, gen: gen}
 		}
 		if code == "authorization_pending" || code == "slow_down" {
 			next := interval
+			// RFC 8628: on slow_down, increase the interval by 5 seconds.
 			if code == "slow_down" {
-				next = interval + time.Second
+				next = interval + 5*time.Second
 			}
-			return authPendingMsg{deviceCode: deviceCode, interval: next}
+			return authPendingMsg{deviceCode: deviceCode, interval: next, gen: gen}
+		}
+		if code != "" {
+			return authSessionMsg{err: fmt.Errorf("login poll: %s", code), code: code, gen: gen}
+		}
+		if strings.TrimSpace(session.Token) == "" {
+			return authSessionMsg{err: fmt.Errorf("empty session token from server"), gen: gen}
 		}
 		creds := sessionCredentials{
 			Token:       session.Token,
@@ -101,9 +122,9 @@ func (m *model) doPoll(deviceCode string, interval time.Duration) tea.Cmd {
 			ServerURL:   cortisolServerURL(),
 		}
 		if err := saveCredentials(creds); err != nil {
-			return authSessionMsg{err: err}
+			return authSessionMsg{err: err, gen: gen}
 		}
-		return authSessionMsg{creds: creds}
+		return authSessionMsg{creds: creds, gen: gen}
 	}
 }
 
@@ -131,9 +152,82 @@ func (m *model) attachAuth(creds sessionCredentials) tea.Cmd {
 		OrgName:     creds.OrgName,
 		OrgID:       creds.OrgID,
 	}
-	m.authDeviceCode = ""
+	m.clearLoginPrompt()
 	m.clipboardNotice = fmt.Sprintf("Logged in as %s · %s", displayLogin(creds), creds.OrgName)
 	return m.watchKnowledgeEvents(creds.Token)
+}
+
+func (m *model) clearLoginPrompt() {
+	m.authDeviceCode = ""
+	m.authUserCode = ""
+	m.authVerificationURI = ""
+	m.authBrowserOpened = false
+	m.authPollInterval = 0
+	m.authPollGen++
+}
+
+func (m *model) loginPending() bool {
+	return strings.TrimSpace(m.authDeviceCode) != "" && strings.TrimSpace(m.authUserCode) != ""
+}
+
+func (m *model) loginPrompt() string {
+	if !m.loginPending() {
+		return ""
+	}
+	if m.authBrowserOpened {
+		return fmt.Sprintf("Waiting for GitHub… code %s · click footer to retry · Esc cancel", m.authUserCode)
+	}
+	return fmt.Sprintf("GitHub login: open %s · enter %s · click footer to reopen · Esc cancel",
+		m.authVerificationURI, m.authUserCode)
+}
+
+type authLoginAssistMsg struct {
+	copied bool
+	opened bool
+	err    error
+}
+
+func openBrowser(rawURL string) error {
+	u := strings.TrimSpace(rawURL)
+	if u == "" {
+		return fmt.Errorf("empty url")
+	}
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", u)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", u)
+	default:
+		cmd = exec.Command("xdg-open", u)
+	}
+	return cmd.Start()
+}
+
+func (m *model) copyLoginCodeAndOpenBrowser() tea.Cmd {
+	code := strings.TrimSpace(m.authUserCode)
+	uri := strings.TrimSpace(m.authVerificationURI)
+	cb := m.clipboard
+	return func() tea.Msg {
+		out := authLoginAssistMsg{}
+		if code != "" && cb != nil {
+			if err := cb.WriteAll(code); err != nil {
+				out.err = err
+			} else {
+				out.copied = true
+			}
+		}
+		if uri != "" {
+			if err := openBrowser(uri); err != nil {
+				if out.err == nil {
+					out.err = err
+				}
+			} else {
+				out.opened = true
+			}
+		}
+		return out
+	}
 }
 
 func displayLogin(creds sessionCredentials) string {
@@ -190,38 +284,93 @@ func (m *model) handleAuthMsg(msg tea.Msg) (tea.Cmd, bool) {
 	switch v := msg.(type) {
 	case authDeviceMsg:
 		if v.err != nil {
+			m.clearLoginPrompt()
 			m.clipboardNotice = "Login failed: " + v.err.Error()
 			return nil, true
 		}
+		m.authPollGen++
+		gen := m.authPollGen
 		m.authDeviceCode = v.start.DeviceCode
-		interval := time.Duration(v.start.Interval) * time.Second
-		m.clipboardNotice = fmt.Sprintf("GitHub login: open %s and enter %s", v.start.VerificationURI, v.start.UserCode)
-		return tea.Batch(m.pollLogin(v.start.DeviceCode, interval), m.doPoll(v.start.DeviceCode, interval)), true
+		m.authUserCode = v.start.UserCode
+		m.authVerificationURI = v.start.VerificationURI
+		m.authBrowserOpened = false
+		m.authPollInterval = pollIntervalFromServer(v.start.Interval)
+		m.clipboardNotice = m.loginPrompt()
+		// One poll chain only. Interval comes from the device-start response.
+		return tea.Batch(
+			m.doPoll(v.start.DeviceCode, m.authPollInterval, gen),
+			m.copyLoginCodeAndOpenBrowser(),
+		), true
+	case authLoginAssistMsg:
+		if !m.loginPending() {
+			return nil, true
+		}
+		m.authBrowserOpened = true
+		switch {
+		case v.copied:
+			m.clipboardNotice = fmt.Sprintf("Waiting for GitHub… code %s · Esc cancel", m.authUserCode)
+		default:
+			m.clipboardNotice = m.loginPrompt()
+		}
+		// One immediate poll after opening the browser; cadence stays server interval.
+		return m.doPoll(m.authDeviceCode, m.authPollInterval, m.authPollGen), true
 	case authPendingMsg:
-		if v.deviceCode == "" || v.deviceCode != m.authDeviceCode {
+		if v.gen != m.authPollGen || v.deviceCode == "" || v.deviceCode != m.authDeviceCode {
 			return nil, true
 		}
-		return m.pollLogin(v.deviceCode, v.interval), true
+		m.authPollInterval = v.interval
+		if m.authBrowserOpened {
+			m.clipboardNotice = fmt.Sprintf("Waiting for GitHub… code %s · Esc cancel", m.authUserCode)
+		}
+		return m.pollLogin(v.deviceCode, v.interval, v.gen), true
 	case authPollTickMsg:
-		if v.deviceCode == "" || v.deviceCode != m.authDeviceCode {
+		if v.gen != m.authPollGen || v.deviceCode == "" || v.deviceCode != m.authDeviceCode {
 			return nil, true
 		}
-		return m.doPoll(v.deviceCode, v.interval), true
+		return m.doPoll(v.deviceCode, v.interval, v.gen), true
 	case authSessionMsg:
+		// gen!=0 is a device-poll generation. Stale gens (Esc cancel, superseded
+		// /login, or a poll that finished after clearLoginPrompt) must never
+		// attach or clear state — including after the banner is already gone.
+		if v.gen != 0 && v.gen != m.authPollGen {
+			return nil, true
+		}
+		// gen==0 is startup disk hydrate / loadAuthOnStart. Its failures must
+		// not abort an in-flight device flow (race: /login before load finishes).
+		if v.gen == 0 && m.loginPending() && v.err != nil {
+			return nil, true
+		}
 		if v.err != nil {
 			if v.code == "authorization_pending" || v.code == "slow_down" {
+				if m.loginPending() {
+					interval := m.authPollInterval
+					if interval < time.Second {
+						interval = pollIntervalFromServer(5)
+					}
+					if v.code == "slow_down" {
+						interval += 5 * time.Second
+					}
+					m.authPollInterval = interval
+					return m.pollLogin(m.authDeviceCode, interval, m.authPollGen), true
+				}
 				return nil, true
 			}
 			errText := v.err.Error()
-			if strings.Contains(errText, "no such file") || strings.Contains(errText, "session expired") || strings.Contains(errText, "empty token") {
+			if !m.loginPending() && (strings.Contains(errText, "no such file") ||
+				strings.Contains(errText, "session expired") ||
+				strings.Contains(errText, "empty token")) {
 				return nil, true
 			}
+			m.clearLoginPrompt()
 			m.clipboardNotice = "Login: " + errText
 			return nil, true
 		}
-		if v.creds.Token == "" {
+		if strings.TrimSpace(v.creds.Token) == "" {
+			m.clearLoginPrompt()
+			m.clipboardNotice = "Login failed: empty session token"
 			return nil, true
 		}
+		m.clearLoginPrompt()
 		return m.attachAuth(v.creds), true
 	case authLogoutMsg:
 		if m.sseCancel != nil {
@@ -229,7 +378,7 @@ func (m *model) handleAuthMsg(msg tea.Msg) (tea.Cmd, bool) {
 			m.sseCancel = nil
 		}
 		m.auth = nil
-		m.authDeviceCode = ""
+		m.clearLoginPrompt()
 		m.knowledgeLiveCh = nil
 		if v.err != nil {
 			m.clipboardNotice = "Logout error: " + v.err.Error()
@@ -238,7 +387,9 @@ func (m *model) handleAuthMsg(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		return nil, true
 	case knowledgeLiveMsg:
-		m.clipboardNotice = fmt.Sprintf("New knowledge from %s: %s", v.author, v.preview)
+		if !m.loginPending() {
+			m.clipboardNotice = fmt.Sprintf("New knowledge from %s: %s", v.author, v.preview)
+		}
 		if m.knowledgeLiveCh != nil {
 			return waitKnowledgeLive(m.knowledgeLiveCh), true
 		}

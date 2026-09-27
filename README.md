@@ -1,13 +1,59 @@
-# Cortisol CLI
+# Cortisol
+
+**Org knowledge where engineers already work — the terminal.**
+
+Wikis and chat live outside the coding loop. Cortisol puts attributed teammate
+answers (who said it, what they learned, optionally where in the code) into
+the same place people get stuck: a CLI / TUI wired to coding agents.
+
+Search while you build. Leave verified knowledge behind when you figure
+something out. Attribution stays with the person who wrote it — not a
+faceless wiki page.
+
+## Why it exists
+
+- **IC first:** unblock mid-task with “who already solved this?”
+- **Org second:** dashboards and coverage once people actually use the loop
+- **Not a Confluence clone:** capture → search in the coding loop, not
+  enterprise knowledge management for everyone
+
+Peers in spirit (not feature parity): Stack Overflow for Teams, Unblocked,
+Sourcegraph — plus agents that generate code without org-attributed memory.
+
+## What you get today
+
+| Surface | Role |
+| --- | --- |
+| **TUI** | Chat with Codex; evaluation and review sit beside coding |
+| **MCP tools** | Agents call `knowledge_search` / `knowledge_post` over HTTP |
+| **HTTP API** | Sessions (GitHub login), knowledge, practice, dashboards |
+| **Dashboard** | Browser UI for sign-in and org views |
+
+Agents attach to Cortisol MCP (`POST /mcp`). Slack tools are configured
+separately — they are not part of Cortisol MCP.
+
+## Quick path (try the loop)
+
+1. Stand up the API + MCP (setup below).
+2. Sign in with GitHub (device flow) from the dashboard or TUI `/login`.
+3. Point Codex at the MCP endpoint and ask something your team might already
+   know — the agent should call `knowledge_search` on its own.
+4. When you learn something durable, post it with attribution via
+   `knowledge_post`.
+
+Product direction and what’s in/out of scope:
+[`CONTEXT.md`](CONTEXT.md). Agent notes: [`AGENTS.md`](AGENTS.md).
+
+---
 
 ## Developer setup
 
-The development setup has these parts: a MongoDB **Atlas** database, the Go
-HTTP API, the HTTP MCP server (agent tools), and optionally the Go TUI /
-dashboard. Configure Atlas first, then run the API and MCP in separate
-terminals (or `docker compose up`).
+The stack: MongoDB **Atlas**, the Go HTTP API, the HTTP MCP server (agent
+tools), and optionally the Go TUI / dashboard. Configure Atlas first, then
+run the API and MCP in separate terminals (or `docker compose up`).
 
-For team Snowflake access, follow the [Snowflake local development setup](#snowflake-local-development-setup) below.
+For team Snowflake access, see
+[Snowflake local development setup](#snowflake-local-development-setup).
 
 ### Prerequisites
 
@@ -96,7 +142,9 @@ upserted and **auto-joined** into the default org (seeded NovaPay unless
    **Sign in** → open the GitHub link → enter the code → avatar appears.
    Click the avatar → **Log out**.
 3. **TUI:** with `CORTISOL_SERVER_URL=http://127.0.0.1:8080`, run
-   `go run ./cmd/tui`, then type `/login` (or `/logout`).
+   `go run ./cmd/tui`, then type `/login` (or `/logout`). After login,
+   `/search-learning <query>` and `/send-learning topic | content` hit the
+   knowledge API directly (no agent required).
 4. **MCP HTTP backend:** after login, pass the session token:
 
 ```bash
@@ -121,7 +169,7 @@ In a terminal from the `server/` directory:
 go run ./cmd/server
 ```
 
-Default listen address: `127.0.0.1:8080` (`HTTP_ADDR`).
+Default listen address: `http://127.0.0.1:8080` (`HTTP_ADDR`).
 
 ### 5. Run the MCP server (agent tools)
 
@@ -194,7 +242,9 @@ export CORTISOL_SERVER_URL=http://127.0.0.1:8080
 go run ./cmd/tui
 ```
 
-Use `/login` for GitHub device login (see step 3). Full MCP steps:
+Use `/login` for GitHub device login (see step 3). After login,
+`/search-learning <query>` reuses the knowledge picker; `/send-learning topic1,topic2 | content`
+posts a learning. Full MCP steps:
 [`docs/codex-mcp.md`](docs/codex-mcp.md). The TUI does not load MCP
 itself — `codex app-server` reads that file.
 
@@ -234,7 +284,7 @@ afterwards. Its vectors are synthetic storage fixtures.
 `go test ./...` and `go run ./cmd/migrate -check` should pass on this branch.
 See [API.md](API.md) for the minimal record fields and repository calls.
 
-## Snowflake Local Development Setup
+## Snowflake local development setup
 
 The server uses the Snowflake Cortex REST API to evaluate prompts. This
 integration does not require a Snowflake database, schema, or warehouse.

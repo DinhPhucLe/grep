@@ -97,7 +97,11 @@ func (m *model) selectionMouse(v tea.MouseMsg) bool {
 		return false
 	}
 	if v.Action == tea.MouseActionPress {
-		m.clipboardNotice = ""
+		// Keep pending GitHub device-login instructions visible; they live in
+		// loginPrompt(), but avoid wiping related clipboard notices on click.
+		if !m.loginPending() {
+			m.clipboardNotice = ""
+		}
 		m.selection = textSelection{}
 		if v.Y < top || v.Y >= top+m.viewport.Height {
 			return false
@@ -221,7 +225,12 @@ func (m *model) quitKey(k tea.KeyMsg) (bool, tea.Cmd) {
 			m.quitDraft = ""
 			return true, m.beginLogout()
 		default:
-			m.clipboardNotice = "Commands: /login · /logout · /quit"
+			if handled, learningCmd := m.handleLearningCommand(cmd); handled {
+				m.quitMode = false
+				m.quitDraft = ""
+				return true, learningCmd
+			}
+			m.clipboardNotice = "Commands: /login · /logout · /search-learning · /send-learning · /quit"
 		}
 	default:
 		if k.Type == tea.KeyRunes && !k.Paste {

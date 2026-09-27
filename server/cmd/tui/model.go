@@ -88,8 +88,14 @@ type model struct {
 	knowledgePreviewOffset                    int
 	auth                                      *authIdentity
 	authDeviceCode                            string
+	authUserCode                              string
+	authVerificationURI                       string
+	authPollGen                               int
+	authPollInterval                          time.Duration
+	authBrowserOpened                         bool
 	sseCancel                                 context.CancelFunc
 	knowledgeLiveCh                           <-chan knowledgeLiveMsg
+	pendingKnowledgeConnect                   tea.Cmd
 }
 type frameMsg time.Time
 type terminalSizeMsg struct{ width, height int }
@@ -160,11 +166,18 @@ func (m *model) call(method string, p any) tea.Cmd {
 }
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	_, cmd := m.update(msg)
+	// Device-flow fields must never outlive a successful session notice.
+	if strings.HasPrefix(m.clipboardNotice, "Logged in as") {
+		m.clearLoginPrompt()
+	}
 	m.resize()
 	return m, cmd
 }
 func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if cmd, handled := m.handleAuthMsg(msg); handled {
+		return m, cmd
+	}
+	if cmd, handled := m.handleKnowledgeCommandMsg(msg); handled {
 		return m, cmd
 	}
 	switch v := msg.(type) {
@@ -310,8 +323,15 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.requestMouse(v)
 			return m, nil
 		}
+		if m.loginPending() && v.Button == tea.MouseButtonLeft && v.Action == tea.MouseActionPress {
+			if m.footerRows() > 0 && v.Y >= m.height-m.footerRows() {
+				return m, m.copyLoginCodeAndOpenBrowser()
+			}
+		}
 		if m.knowledgeMouse(v) {
-			return m, nil
+			cmd := m.pendingKnowledgeConnect
+			m.pendingKnowledgeConnect = nil
+			return m, cmd
 		}
 		if m.selectionMouse(v) {
 			return m, nil
@@ -357,6 +377,11 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if handled, cmd := m.quitKey(v); handled {
 			return m, cmd
 		}
+		if m.loginPending() && v.String() == "esc" {
+			m.clearLoginPrompt()
+			m.clipboardNotice = "Login canceled"
+			return m, nil
+		}
 		m.clipboardNotice = ""
 		if len(m.selection.lines) > 0 {
 			m.selection = textSelection{}
@@ -369,7 +394,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.knowledgeKey(v) {
-			return m, nil
+			cmd := m.pendingKnowledgeConnect
+			m.pendingKnowledgeConnect = nil
+			return m, cmd
 		}
 		if v.String() == "f1" {
 			m.showHelp = true
@@ -515,6 +542,14 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.draft.Reset()
 				m.resize()
 				return m, m.beginLogout()
+			}
+			if handled, cmd := m.handleLearningCommand(trimmed); handled {
+				// Keep the draft on usage/auth errors so the query isn't lost.
+				if cmd != nil {
+					m.draft.Reset()
+				}
+				m.resize()
+				return m, cmd
 			}
 			if m.quizActive() {
 				return m, m.quizEnter(trimmed)

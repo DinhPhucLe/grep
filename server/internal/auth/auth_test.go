@@ -100,6 +100,74 @@ func TestDevicePollPending(t *testing.T) {
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("status %d body %s", w.Code, w.Body.String())
 	}
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error.Code != "authorization_pending" {
+		t.Fatalf("code=%q", body.Error.Code)
+	}
+}
+
+func TestDevicePollErrorContracts(t *testing.T) {
+	cases := []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{"slow_down", ErrDeviceSlowDown, http.StatusAccepted, "slow_down"},
+		{"expired", ErrDeviceExpired, http.StatusGone, "expired_token"},
+		{"denied", ErrDeviceDenied, http.StatusForbidden, "access_denied"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &Service{
+				cfg: Config{GitHubClientID: "cid"},
+				client: &mockGitHub{
+					pollN: 1, // skip pending branch
+					err:   tc.err,
+				},
+			}
+			mux := http.NewServeMux()
+			svc.Register(mux)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/github/poll", strings.NewReader(`{"deviceCode":"dev"}`))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != tc.status {
+				t.Fatalf("status %d body %s", w.Code, w.Body.String())
+			}
+			var body struct {
+				Error struct {
+					Code string `json:"code"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Error.Code != tc.code {
+				t.Fatalf("code=%q want %q", body.Error.Code, tc.code)
+			}
+		})
+	}
+}
+
+func TestDevicePollRejectsEmptyDeviceCode(t *testing.T) {
+	svc := &Service{cfg: Config{GitHubClientID: "cid"}, client: &mockGitHub{}}
+	mux := http.NewServeMux()
+	svc.Register(mux)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/github/poll", strings.NewReader(`{"deviceCode":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status %d", w.Code)
+	}
 }
 
 func TestRequireUnauthorized(t *testing.T) {

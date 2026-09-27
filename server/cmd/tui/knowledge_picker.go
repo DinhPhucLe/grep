@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -265,7 +267,28 @@ func (m *model) useKnowledgeAt(idx int) bool {
 	m.knowledgeConnectedOrder = append(m.knowledgeConnectedOrder, hit.ID)
 	m.knowledgeHits[idx].Connected = true
 	m.resize()
+	m.pendingKnowledgeConnect = m.postKnowledgeConnect(hit.ID)
 	return true
+}
+
+func (m *model) postKnowledgeConnect(documentID string) tea.Cmd {
+	if !m.ensureAuth() {
+		return nil
+	}
+	sessionID := strings.TrimSpace(m.threadID)
+	if sessionID == "" || strings.TrimSpace(documentID) == "" {
+		return nil
+	}
+	token := m.auth.Token
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = postJSON(ctx, cortisolServerURL()+"/api/v1/knowledge/connects", map[string]string{
+			"documentId": documentID,
+			"sessionId":  sessionID,
+		}, token, nil)
+		return nil
+	}
 }
 
 func (m *model) unlinkKnowledge(id string) {
