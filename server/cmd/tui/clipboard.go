@@ -65,7 +65,20 @@ func (m *model) requestInputActive() bool {
 	if len(r.questions) > 0 {
 		return r.selected >= len(r.questions[r.question].Options)
 	}
-	return r.message.Method == "mcpServer/elicitation/request" && r.selected == 1
+	// Index 2 is "Send form data (JSON)" on mcpServer/elicitation/request.
+	return r.message.Method == "mcpServer/elicitation/request" && r.selected == 2
+}
+
+func (m *model) syncRequestInputFocus() {
+	if len(m.requests) == 0 {
+		return
+	}
+	r := m.requests[0]
+	if m.requestInputActive() {
+		r.input.Focus()
+		return
+	}
+	r.input.Blur()
 }
 func (m *model) selectionMouse(v tea.MouseMsg) bool {
 	top := m.headerRows()

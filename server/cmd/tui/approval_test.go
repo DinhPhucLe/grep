@@ -7,6 +7,30 @@ import (
 	"testing"
 )
 
+func TestMcpElicitationAllowWithoutJSON(t *testing.T) {
+	out := &bufferCloser{}
+	m := newModel(&appServer{stdin: out}, "w", uiOptions{})
+	m.Update(wireMessage{
+		ID:     json.RawMessage(`"elicit-1"`),
+		Method: "mcpServer/elicitation/request",
+		Params: json.RawMessage(`{"serverName":"cortisol","message":"Allow the cortisol MCP server to run tool 'quack'?"}`),
+	})
+	if len(m.requests) != 1 || m.requests[0].selected != 1 || m.requests[0].choices[1].label != "Allow" {
+		t.Fatalf("expected Allow selected by default: %+v", m.requests)
+	}
+	if m.requestInputActive() {
+		t.Fatal("JSON input should not be active on Allow")
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Allow enter should reply")
+	}
+	cmd()
+	if !strings.Contains(out.String(), `"action":"accept"`) || !strings.Contains(out.String(), `"id":"elicit-1"`) {
+		t.Fatal(out.String())
+	}
+}
+
 func TestApprovalUsesPlainEnglishAndOptionalDetails(t *testing.T) {
 	m := newModel(nil, "w", uiOptions{NoColor: true})
 	m.Update(wireMessage{ID: json.RawMessage(`1`), Method: "item/commandExecution/requestApproval", Params: json.RawMessage(`{"command":"Get-Content -LiteralPath C:/project/SKILL.md","commandActions":[{"type":"read","path":"C:/project/SKILL.md","name":"SKILL.md"}],"reason":"Read the project instructions"}`)})

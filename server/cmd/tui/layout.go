@@ -110,6 +110,7 @@ func (m *model) bottom() string {
 	if s := m.statusText(); s != "" {
 		parts = append(parts, s)
 	}
+
 	input := m.draft.View()
 	if len(m.requests) > 0 {
 		input = m.requestView()

@@ -7,12 +7,13 @@ import (
 	"cortisol-server/internal/timing"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"strings"
-	"time"
 )
 
 type uiOptions struct {
@@ -276,6 +277,7 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+
 		if len(m.requests) > 0 {
 			m.requestMouse(v)
 			return m, nil

@@ -1,0 +1,34 @@
+[
+  {
+    "create": "knowledge_records",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["_id", "project_id", "source", "topic", "content", "created_at"],
+        "additionalProperties": false,
+        "properties": {
+          "_id": { "bsonType": "objectId" },
+          "project_id": { "bsonType": "objectId" },
+          "source": { "bsonType": "string", "minLength": 1, "maxLength": 1024, "pattern": "\\S" },
+          "topic": { "bsonType": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S" },
+          "content": { "bsonType": "string", "minLength": 1, "maxLength": 1048576, "pattern": "\\S" },
+          "embedding": { "bsonType": "array", "minItems": 1, "maxItems": 4096, "items": { "bsonType": "double" } },
+          "embedding_model": { "bsonType": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S" },
+          "created_at": { "bsonType": "date" }
+        },
+        "oneOf": [
+          { "required": ["embedding", "embedding_model"] },
+          { "not": { "anyOf": [{ "required": ["embedding"] }, { "required": ["embedding_model"] }] } }
+        ]
+      }
+    },
+    "validationLevel": "strict",
+    "validationAction": "error"
+  },
+  {
+    "createIndexes": "knowledge_records",
+    "indexes": [
+      { "key": { "project_id": 1, "created_at": -1, "_id": -1 }, "name": "knowledge_records_by_project_created" }
+    ]
+  }
+]

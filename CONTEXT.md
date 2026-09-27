@@ -1,37 +1,208 @@
 # Cortisol CLI — Current product direction
 
-## Purpose
+This document records the current product direction and what exists in the
+repo today. Confirmed behavior is described below; planned work and open
+choices are marked **WIP**.
 
 Cortisol is a TUI client of Codex app-server. It helps a client compare their intended product behavior with the behavior Codex implemented when a build request was ambiguous. Codex owns coding actions; the TUI owns evaluation, review questions, and presentation.
 
-## Evaluation and normal conversation
+Cortisol is becoming a **CLI-native knowledge-sharing medium for software
+engineers** in the same organization.
 
-Classify the latest message before rating ambiguity. Only explicit requests to build, implement, add, change, fix, or remove code/product behavior receive a numeric ambiguity score. Use prior conversation to resolve requirements, not to turn every follow-up into another implementation request.
+The core job: while someone is building, they can retrieve **attributed**
+technical knowledge created by teammates (name + insight + optional code
+locus), and they can leave verified knowledge behind for others. Wikis and
+chat sit outside the coding loop; Cortisol aims to put org memory where
+engineers already interrupt themselves to get unstuck (terminal / TUI).
 
-Confirmations, approvals, option selections, answers to clarification questions, greetings, explanations, status checks, and inspection/test-only requests have `verdict: not_applicable`, `ambiguity_score: null`, and `gaps: []`. They go to Codex unchanged with no evaluation card, workspace baseline, or quiz. A confirmation that authorizes an existing plan is still normal conversation. A message that adds a concrete new implementation request is evaluated.
+That direction supersedes positioning Cortisol only as:
 
-For implementation requests, a good prompt specifies what should happen, the relevant implementation approach and constraints, and applicable examples or references to reusable code. Existing conversation can supply these details; narrow edits do not need artificial checklist items. Scores at or below 0.30 are clear; scores above 0.30 require consequential behavior, compatibility, or integration gaps. Higher scores mean greater ambiguity. The evaluator only sees supplied text and cannot verify repository references. Unrelated internal engineering choices are not grounds for quizzing the client.
+- a passive observability / “cortisol signal” dashboard, or
+- a product whose *headline* is codebase quizzing.
 
-## Implementation review
+Quiz / practice (`lead_and_reveal`) remains part of the system as a
+**structured engagement and potential write path** into shared knowledge,
+not as the primary customer-facing story.
 
-After an ambiguous implementation request, Codex implements the original request. If its completed turn produces no changed text files, return silently to normal chat. If there are files, Snowflake generates up to four distinct, grounded review questions, prioritizing consequential behavior. One is sufficient; never pad to four. If nothing is client-facing and quizzable, return no questions and silently open review.
+### Product wedge (confirmed direction)
 
-Questions address a client in plain language about observable outcomes. Never ask the client to design underlying architecture, choose queues/databases/frameworks, optimize API calls, or decide whether quizzes or grading should run individually or in batches. Those are implementation responsibilities, not quiz material. The quiz generator must not ask for implementation permission or confirmation.
+1. **IC first** — unblock mid-task (“who already solved this?”) with author
+   attribution.
+2. **Org second** — dashboards and coverage / health views for managers once
+   usage exists.
+3. **Not day-one** — Slack ingest, 3D knowledge maps, and IDE autocomplete
+   with name chips are later; they need a working capture → search loop.
 
-The TUI displays one question at a time in a muted-yellow ASCII dashed box (plain borders when color is disabled). Each question opens its first source reference at the starting line in the existing VS Code editor; Ctrl+O cycles references. Quiz panels show references, not source dumps. Individual answers are graded by a separate ephemeral Codex run, then saved to MongoDB with the answer, question, original prompt, numeric score, reasoning, user reference, and timestamp before Enter advances. A failed save keeps the draft and grade for an idempotent retry. The TUI shows an accuracy score from 0 to 1 and explains wrong or partly right answers. Grading failures show no score and keep the answer for retry. Migration 9 added graded answers. Migration 10 removed their project requirement and was applied with approval. There are no grading endpoints, answer queues, or batch grading. Embeddings remain a proposal; see docs/quiz-answer-storage-plan.md. Persistence uses existing users. Without a selected user, quizzes remain local and label answers as unsaved.
+## 2. What exists today
 
-Code and implementation output remain visible throughout; nothing is masked or restored. VS Code opens the live file while question references come from the completed-turn snapshot. Editor launch failures leave the quiz usable with an explanatory message. Normal Codex approval and input requests remain available. Model output is validated for real file/line/gap references. Later overlapping questions are dropped before rendering to reduce repetitive coverage. This cannot prove semantic correctness or comprehension.
+### 2.1 Go HTTP server (`server/`)
 
-## Scope
+- MongoDB-backed API (migrations, seed demo cast: NovaPay / AtlasHealth).
+- Prompt evaluation via Snowflake Cortex (clarity / ambiguity tooling used by
+  the intervention path).
+- **Practice events** ingest and aggregation:
+  - `POST /api/v1/practice-events`
+  - Employee and org practice dashboard GETs under `/api/v1/dashboard/...`
+  - Practice currently supported: `lead_and_reveal`
+- Directory search (people / org recommendations).
+- Practice views can surface **organization and user display names** when
+  looked up from Mongo (not raw IDs only in the UI).
 
-The application has no login, registration, caller tokens, auth middleware, or account sessions. Snowflake, MongoDB, and Codex retain the credentials required to access those external services. Do not reintroduce application authentication or testing/latency experiments as product features.
+### 2.2 Go TUI (`server/cmd/tui`)
 
-The experimental multi-file attachment commands and bundled Codex inputs are removed. Send the user's prompt unchanged. Evaluation and quiz generation remain separate, direct API operations; there is no query-batching endpoint, scope-planning worker pool, progressive generation, or answer submission queue. The quiz generator uses the completed implementation's file snapshot as evidence.
+- Client of `codex app-server` over JSON-RPC via stdio.
+- Owns the intervention UX around Codex: prompt evaluation hooks, quiz /
+  reveal sequence, points feedback, approval surfacing.
+- Historically does **not** talk to the Go HTTP server for its Codex loop;
+  wiring TUI ↔ knowledge API is **WIP**.
 
-Numeric and null-score evaluations are persisted to MongoDB in `evaluations`, with a database ID returned only after a successful insert. Null scores remain null and still skip quizzes; migration 7 supplies the nullable validator. Quiz answers reference existing `users._id` as an ObjectID; the server checks user existence. User fields remain unchanged. The TUI remembers an ID selected with `--user-id` per workspace in `cortisol/users.json`. No identity is generated, no profile is created, and evaluation does not depend on a registration call. Generated unanswered quizzes are held temporarily by the server; saved answer records contain the authoritative question and original prompt. Points, rewards, and persistent quiz sessions are out of current scope. The old passive dashboard/metrics direction is also outside this flow.
+### 2.3 Dashboard (`dashboard/`)
 
-The intervention is inspired by work on engagement with AI-generated code; neither model scores nor answers establish that a user understands an implementation.
+- Presentation-only React app. Loads aggregates over HTTP; does not stream
+  from the CLI.
+- Session / heatmap views plus **employee and organization practice** pages
+  (calendar, outcomes, codebase treemaps, outcomes-over-time charts).
+- Practice viz polish: readable dates, truncated IDs, named subjects, dynamic
+  intensity tiers, denser mocks.
 
-## Database operations
+Authoritative API shapes: `API.md`, `dashboard/src/contracts/`.
 
-Get explicit approval before applying or reverting a database migration. Code changes, local checks, and read-only inspection may proceed within the requested task.
+## 3. Knowledge-sharing pivot (target)
+
+### 3.1 Meaningful CLI loop
+
+A credible eng-knowledge product needs:
+
+1. **Write** — store a knowledge unit with author, org, topic, body, optional
+   repo/module/file.
+2. **Read** — query with filters + top‑k **vector search**, return results
+   with **person attribution**.
+3. **Schema** — one `knowledge_cards` (name TBD) model that both API and CLI
+   share.
+
+Without write + read, Slack, autocomplete, and graphs are empty.
+
+### 3.2 Near-term build budget
+
+| Size | Scope | Status |
+|------|--------|--------|
+| **Medium** | HTTP MCP server with real tool schemas (`quack`, `knowledge_search`, `knowledge_post`) + mock knowledge backends; Docker packaging for Go API + MCP; Slack via official Slack MCP (docs/config only) | **Done** — see [`mcp/`](mcp/) and root [`docker-compose.yml`](docker-compose.yml) |
+| **Small** | Fixture knowledge corpus for demos | **Done** — [`mcp/fixtures/`](mcp/fixtures/) |
+| **Next (other / follow-on)** | Go `GET/POST /api/v1/knowledge` with Atlas vector search; flip MCP from mock → HTTP client | Planned |
+
+**Deferred:** Slack Events bot, full code-embedding index as a second system,
+cross-org autocomplete with name chips, 3D knowledge maps.
+
+Practice → auto-publish knowledge card is a natural follow-on once real ingest
+and search exist on the Go API.
+
+### 3.3 Schema direction (**WIP** on Go; frozen for MCP)
+
+MCP contract: [`mcp/contracts/knowledge.ts`](mcp/contracts/knowledge.ts).
+
+- `id`, `content`, `topics[]`, `properties{}`, `authors[]`, timestamps,
+  `organizationId`
+- optional properties for `repo` / `module` / `file_path` / `language`
+- Go side still needs collection validator + `embedding[]` + Atlas vector index
+
+### 3.4 MCP surface (agent discovery)
+
+Agents attach to the Cortisol MCP **HTTP** endpoint (`POST /mcp`, default
+`:3100`). Tools: `quack` (smoke), `knowledge_search`, `knowledge_post`
+(knowledge backends mocked). **Slack tools are not part of Cortisol MCP** —
+agents use Slack’s official MCP (`https://mcp.slack.com/mcp`); see
+[`docs/slack-mcp.md`](docs/slack-mcp.md).
+
+Expose Cortisol (+ Slack) to the Codex app-server behind our TUI via
+[`.codex/config.toml.example`](.codex/config.toml.example) and
+[`docs/codex-mcp.md`](docs/codex-mcp.md).
+
+Deploy packaging (two containers only; Atlas external):
+
+```bash
+docker compose up --build
+```
+## 4. Intervention / practice (still in repo)
+
+The TUI intervention flow remains relevant as **how engineers engage with
+AI-generated work** and as a generator of structured practice events:
+
+1. User prompts in the TUI; clarity is evaluated in context.
+2. Clear prompts → points and normal Codex execution.
+3. Consequential ambiguity → gaps identified (Cortex); Codex runs on the
+   user’s original instructions.
+4. Selected logic is withheld; user answers up to **two** attempts about a
+   consequential choice.
+5. Points update; **code is revealed either way**.
+6. Conversation continues; later prompts re-enter the same flow.
+
+Clarity rubric details, reveal/staging safety when code is already on disk,
+and point economics remain partly **WIP** (see historical notes in git /
+TUI docs). A correct quiz answer is **not** proof of full understanding.
+
+Research inspiration (not a validation of our point rules): Kazemitabaar et
+al., *Exploring the Design Space of Cognitive Engagement Techniques with
+AI-Generated Code for Enhanced Learning* (IUI 2025; arXiv:2410.08922).
+
+## 5. Architecture (current)
+
+```text
+┌─────────────┐     JSON-RPC/stdio      ┌──────────────────┐
+│  Go TUI     │ ◄──────────────────────► │  codex app-server │
+└──────┬──────┘                          └──────────────────┘
+       │ (practice ingest — knowledge API WIP)
+       ▼
+┌─────────────┐     HTTP JSON           ┌──────────────────┐
+│  Dashboard  │ ◄──────────────────────► │  Go HTTP API     │
+└─────────────┘                          │  :8080 + Cortex  │
+                                         └────────┬─────────┘
+                                                  │
+                                         ┌────────▼─────────┐
+                                         │  MongoDB Atlas   │
+                                         └──────────────────┘
+
+┌─────────────┐   MCP Streamable HTTP   ┌──────────────────┐
+│ Agent host  │ ◄──────────────────────► │  cortisol MCP    │
+│ Codex/TUI   │                          │  :3100 (mocks)   │
+│ Cursor/etc  │ ───────────────────────► │  Slack MCP       │
+└─────────────┘                          │  mcp.slack.com   │
+                                         └──────────────────┘
+```
+
+- **Go API** (`server/cmd/server`): practice, evaluations, dashboard; Atlas via
+  `MONGODB_URI`.
+- **MCP** (`mcp/`): agent tools for org knowledge (+ `quack` smoke); mock
+  knowledge backends today. Slack is the official Slack MCP, configured next
+  to Cortisol in Codex/Cursor — not reimplemented here.
+- **Compose** packages only those two HTTP services; Atlas stays cloud-hosted.
+- **Codex** generates code in the TUI loop; **Cortex** evaluates prompts.
+
+## 6. Positioning guide (for pitches and agents)
+
+**Lead with:** engineering knowledge sharing in the coding loop; attributed
+teammate answers.
+
+**Support with:** onboarding ramp, bus factor, senior interrupt load;
+startups (few heads hold everything) vs large orgs (scattered knowledge,
+same experts overloaded).
+
+**Do not lead with:** general HR attrition theater, “we quiz your codebase,”
+or a 3D knowledge graph as the next milestone.
+
+**Category peers (not feature parity claims):** Stack Overflow for Teams /
+Stack Internal (eng Q&A), Unblocked (eng context + CLI/MCP), Sourcegraph
+(code intel), Copilot/Cursor (generation without org attribution).
+
+## 7. Superseded directions
+
+Do not treat these as the current product center:
+
+- Whole-repo ASCII “future diagram” / pre-execution prompt rewrite as the
+  main experience.
+- Passive dashboard cortisol / observability metric contract as the north star.
+- General-enterprise knowledge management (Confluence replacement) for all
+  employees.
+- Shipping Slack ingest or 3D cluster viz before `ask` + `add` work.
+
+Older formulas and contracts in the tree may still exist for compatibility;
+this file defines **target product intent**.
