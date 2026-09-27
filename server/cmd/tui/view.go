@@ -27,25 +27,12 @@ func safeText(s string) string {
 		return r
 	}, s)
 }
-func (m *model) role(user bool) string {
-	if user {
-		if m.opts.NoIcons {
-			return "You"
-		}
-		return "👤 You"
-	}
-	if m.opts.NoIcons {
-		return "Codex"
-	}
-	return "✦ Codex"
-}
 func (m *model) accent(s, color string) string {
 	if m.opts.NoColor {
 		return s
 	}
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Bold(true).Render(s)
 }
-
 func (m *model) quizPanelView(raw string) string {
 	width := max(1, m.width-2)
 	text := strings.ReplaceAll(safeText(raw), "\t", "    ")
@@ -68,6 +55,20 @@ func (m *model) quizPanelView(raw string) string {
 	return rule + "\n" + strings.Join(lines, "\n") + "\n" + rule
 }
 
+func (m *model) userMessageView(text string) string {
+	w := max(1, m.width)
+	inner := max(1, w-2)
+	wrapped := ansi.Wrap(safeText(text), inner, "")
+	if m.opts.NoColor {
+		return "\n" + wrapped + "\n"
+	}
+	return lipgloss.NewStyle().
+		Background(lipgloss.AdaptiveColor{Light: "#E8E8E8", Dark: "#454545"}).
+		Foreground(lipgloss.AdaptiveColor{Light: "#1A1A1A", Dark: "#E8E8E8"}).
+		Padding(1, 1).
+		Width(w).
+		Render(wrapped)
+}
 func (m *model) markdown(i *conversationItem) string {
 	w := max(1, m.width-2)
 	if i.cache != "" && i.cacheWidth == w && i.cacheRaw == i.raw {
@@ -128,13 +129,13 @@ func (m *model) refresh() {
 			}
 			b.WriteString(m.quizPanelView(i.raw))
 		case "userMessage":
-			b.WriteString(m.accent(m.role(true), "6") + "\n" + ansi.Wrap(safeText(i.raw), max(1, m.width-2), ""))
+			b.WriteString(m.userMessageView(i.raw))
 		case "agentMessage":
 			body := m.markdown(i)
 			if !i.done && m.busy && !m.opts.ReducedMotion && m.frame%30 < 15 {
 				body = ansi.Wrap(body+"▌", max(1, m.width-2), "")
 			}
-			b.WriteString(m.accent(m.role(false), "13") + "\n" + body)
+			b.WriteString(body)
 		default:
 			prefix := "▸ "
 			if m.opts.NoIcons {
@@ -228,6 +229,12 @@ func (m *model) shortcutStyle(s string) string {
 		}
 	}
 	return ansi.Truncate(strings.Join(parts, " · "), m.width, "")
+}
+func (m *model) subtleHint(s string) string {
+	if m.opts.NoColor {
+		return ansi.Truncate(s, m.width, "")
+	}
+	return ansi.Truncate(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(s), m.width, "")
 }
 func fitScreen(s string, w, h int) string {
 	lines := strings.Split(s, "\n")

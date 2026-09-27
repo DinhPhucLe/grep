@@ -87,9 +87,15 @@ cd server
 go run ./cmd/tui
 ```
 
-In the TUI ask: call `quack`
+Smoke test: ask to call `quack` → `this mcp tool work quack quack quack`.
 
-You should get: `this mcp tool work quack quack quack`
+Natural discovery (no need to name the tool): ask things like
+
+- “search our knowledge base for payment 429 retries”
+- “how does the team handle Stripe webhook HMAC?”
+- “this probably isn’t in the codebase — check org knowledge”
+
+The agent should call `knowledge_search` from the Cortisol MCP on its own.
 
 ---
 

@@ -64,91 +64,300 @@ const knowledgeFixtureJSON = `{
   "scores": [0.95, 0.88, 0.8, 0.7, 0.65]
 }`
 
-func TestKnowledgePickerOpensFromSearchJSON(t *testing.T) {
+func knowledgeSearchEvent(method, status, resultJSON string) wireMessage {
+	item := map[string]any{
+		"id":     "mcp-1",
+		"type":   "mcpToolCall",
+		"server": "cortisol",
+		"tool":   "knowledge_search",
+		"status": status,
+		"arguments": map[string]any{
+			"query": "payment retries",
+		},
+	}
+	if resultJSON != "" {
+		item["result"] = map[string]any{
+			"content": []map[string]any{
+				{"type": "text", "text": resultJSON},
+			},
+		}
+	}
+	params, _ := json.Marshal(map[string]any{
+		"threadId": "t",
+		"turnId":   "1",
+		"item":     item,
+	})
+	return wireMessage{Method: method, Params: params}
+}
+
+func TestKnowledgeSearchShowsConnectingThenResults(t *testing.T) {
 	m := newModel(nil, "workspace", uiOptions{NoIcons: true, NoColor: true, ReducedMotion: true})
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m.threadID = "t"
 	m.status = "Ready"
 	m.connected = true
 
-	if !m.TryOpenKnowledgePicker([]byte(knowledgeFixtureJSON)) {
-		t.Fatal("expected picker to open")
-	}
-	if !m.knowledgePickerOpen || len(m.knowledgeHits) != 5 {
-		t.Fatalf("open=%v hits=%d", m.knowledgePickerOpen, len(m.knowledgeHits))
+	m.reduce(knowledgeSearchEvent("item/started", "inProgress", ""))
+	if !m.knowledgeSearching {
+		t.Fatal("expected searching")
 	}
 	view := m.View()
-	if !strings.Contains(view, "Alex Rivera") {
-		t.Fatalf("missing author in view: %s", view)
+	if !strings.Contains(view, "Connecting to cloud") {
+		t.Fatalf("missing connecting: %s", view)
 	}
-	if !strings.Contains(view, "exponential backoff") && !strings.Contains(view, "backoff") {
-		t.Fatalf("missing hit content: %s", view)
+	if strings.Contains(view, "Use") {
+		t.Fatal("Use shown before results")
+	}
+
+	m.reduce(knowledgeSearchEvent("item/completed", "completed", knowledgeFixtureJSON))
+	if m.knowledgeSearching {
+		t.Fatal("still searching")
+	}
+	if len(m.knowledgeHits) != 5 {
+		t.Fatalf("hits=%d", len(m.knowledgeHits))
+	}
+	if m.knowledgeExpanded {
+		t.Fatal("should start collapsed")
+	}
+	view = m.View()
+	if !strings.Contains(view, "5 matches") {
+		t.Fatalf("missing toggle: %s", view)
+	}
+	if strings.Contains(view, "View") && strings.Contains(view, "Alex Rivera") {
+		// expanded list should not show until toggled
+		t.Fatalf("results visible while collapsed: %s", view)
 	}
 }
 
-func TestKnowledgePickerSelectExpectedKeywordLeavesReady(t *testing.T) {
-	m := newModel(nil, "workspace", uiOptions{NoIcons: true, NoColor: true, ReducedMotion: true})
+func TestKnowledgeSearchFastCompleteWithoutStarted(t *testing.T) {
+	m := newModel(nil, "w", uiOptions{NoColor: true, ReducedMotion: true})
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.threadID = "t"
+	m.reduce(knowledgeSearchEvent("item/completed", "completed", knowledgeFixtureJSON))
+	if m.knowledgeSearching || len(m.knowledgeHits) != 5 {
+		t.Fatalf("searching=%v hits=%d", m.knowledgeSearching, len(m.knowledgeHits))
+	}
+}
+
+func TestKnowledgeSearchEmptyAndFailed(t *testing.T) {
+	m := newModel(nil, "w", uiOptions{NoColor: true, ReducedMotion: true})
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.threadID = "t"
+
+	m.reduce(knowledgeSearchEvent("item/started", "inProgress", ""))
+	m.reduce(knowledgeSearchEvent("item/completed", "completed", `{"items":[],"scores":[]}`))
+	if m.knowledgeSearching || len(m.knowledgeHits) != 0 {
+		t.Fatal("empty search")
+	}
+	if m.knowledgePingLeft != 0 {
+		t.Fatal("empty should not ping")
+	}
+	if !strings.Contains(m.View(), "No knowledge matches") {
+		t.Fatalf("view=%s", m.View())
+	}
+
+	m.reduce(knowledgeSearchEvent("item/started", "inProgress", ""))
+	m.reduce(knowledgeSearchEvent("item/completed", "failed", ""))
+	if m.knowledgeSearching || len(m.knowledgeHits) != 0 {
+		t.Fatal("failed search")
+	}
+	if m.knowledgePingLeft != 0 {
+		t.Fatal("failed should not ping")
+	}
+}
+
+func TestKnowledgeUseConnectsOnceAndPrependsPrompt(t *testing.T) {
+	m := newModel(nil, "w", uiOptions{NoColor: true, ReducedMotion: true})
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m.threadID = "t"
 	m.connected = true
-	m.busy = true
-	m.status = "Working"
-	if !m.TryOpenKnowledgePicker([]byte(knowledgeFixtureJSON)) {
-		t.Fatal("open")
+	m.reduce(knowledgeSearchEvent("item/completed", "completed", knowledgeFixtureJSON))
+
+	m.knowledgeExpanded = true
+	m.resize()
+	if !m.useKnowledgeAt(0) {
+		t.Fatal("use failed")
+	}
+	if !m.knowledgeHits[0].Connected || m.knowledgeLinkCount() != 1 {
+		t.Fatal("not connected")
+	}
+	if !m.useKnowledgeAt(0) {
+		t.Fatal("toggle unlink should succeed")
+	}
+	if m.knowledgeHits[0].Connected || m.knowledgeLinkCount() != 0 {
+		t.Fatal("expected unlink on second activation")
+	}
+	if !m.useKnowledgeAt(0) {
+		t.Fatal("re-use failed")
+	}
+	if m.knowledgeLinkCount() != 1 || !m.knowledgeHits[0].Connected {
+		t.Fatal("re-connect failed")
+	}
+	view := m.View()
+	if !strings.Contains(view, "Connected") || !strings.Contains(view, "1 new link") {
+		t.Fatalf("view=%s", view)
 	}
 
-	wantKeyword := "HMAC-SHA256"
-	idx := -1
-	for i, hit := range m.knowledgeHits {
-		if strings.Contains(hit.Content, wantKeyword) {
-			idx = i
-			break
-		}
+	// failed use: empty id
+	m.knowledgeHits = append(m.knowledgeHits, knowledgeHit{ID: "", Content: "x", Title: "x", Source: "s"})
+	idx := len(m.knowledgeHits) - 1
+	if m.useKnowledgeAt(idx) {
+		t.Fatal("empty id should fail")
 	}
-	if idx < 0 {
-		t.Fatal("fixture missing keyword")
-	}
-	m.knowledgeSelected = idx
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if m.knowledgePickerOpen {
-		t.Fatal("picker still open")
-	}
-	if m.selectedKnowledge == nil || !strings.Contains(m.selectedKnowledge.Content, wantKeyword) {
-		t.Fatalf("selection %+v", m.selectedKnowledge)
+	if m.knowledgeLinkCount() != 1 {
+		t.Fatal("failed use changed count")
 	}
 
-	m.reduce(event("turn/completed", `{"threadId":"t","turn":{"id":"1","status":"completed"}}`))
-	if m.busy {
-		t.Fatal("still busy")
-	}
-	if m.draft.Focused() == false && len(m.requests) == 0 {
-		m.draft.Focus()
-	}
-	if !m.draft.Focused() {
-		t.Fatal("composer not focused for continued use")
+	got := m.promptWithConnectedKnowledge("continue please")
+	if !strings.Contains(got, "Connected org knowledge") || !strings.Contains(got, "exponential backoff") || !strings.HasSuffix(strings.TrimSpace(got), "continue please") {
+		t.Fatalf("prepend=%s", got)
 	}
 }
 
-func TestKnowledgePickerEscDismisses(t *testing.T) {
-	m := newModel(nil, "workspace", uiOptions{NoIcons: true, NoColor: true, ReducedMotion: true})
-	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	m.TryOpenKnowledgePicker([]byte(knowledgeFixtureJSON))
-	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.knowledgePickerOpen {
-		t.Fatal("still open")
+func TestKnowledgeLinksOverlaySessionOnly(t *testing.T) {
+	m := newModel(nil, "w", uiOptions{NoColor: true, ReducedMotion: true})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.threadID = "t"
+	m.reduce(knowledgeSearchEvent("item/completed", "completed", knowledgeFixtureJSON))
+	_ = m.useKnowledgeAt(0)
+	_ = m.useKnowledgeAt(1)
+	if m.knowledgeLinkCount() != 2 {
+		t.Fatal(m.knowledgeLinkCount())
 	}
-	if m.selectedKnowledge != nil {
-		t.Fatal("unexpected selection")
+	m.openKnowledgeLinksOverlay()
+	if !m.knowledgeLinksOverlay {
+		t.Fatal("overlay closed")
+	}
+	view := m.View()
+	if !strings.Contains(view, "Connected this session") {
+		t.Fatalf("%s", view)
+	}
+	if !strings.Contains(view, "2 new links") {
+		t.Fatalf("%s", view)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.knowledgeLinksOverlay {
+		t.Fatal("esc did not close")
+	}
+	if !m.draft.Focused() {
+		t.Fatal("composer not restored")
+	}
+}
+
+func TestKnowledgeStaleSearchDoesNotRestart(t *testing.T) {
+	m := newModel(nil, "w", uiOptions{NoColor: true, ReducedMotion: false})
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.threadID = "t"
+	m.reduce(knowledgeSearchEvent("item/started", "inProgress", ""))
+	gen := m.knowledgeSearchGen
+	m.reduce(knowledgeSearchEvent("item/completed", "completed", knowledgeFixtureJSON))
+	if m.knowledgeSearching {
+		t.Fatal("searching")
+	}
+	m.Update(frameMsg{})
+	m.Update(frameMsg{})
+	if m.knowledgeSearching || m.knowledgeSearchGen != gen {
+		t.Fatal("frame restarted search")
+	}
+}
+
+func TestKnowledgeCollapseToggleAndViewVsUse(t *testing.T) {
+	m := newModel(nil, "w", uiOptions{NoColor: true, ReducedMotion: true})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 28})
+	m.threadID = "t"
+	m.status = "Ready"
+	m.reduce(knowledgeSearchEvent("item/completed", "completed", knowledgeFixtureJSON))
+	if m.knowledgeExpanded {
+		t.Fatal("expected collapsed")
+	}
+	m.focus = knowledgeFocusToggle
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.knowledgeExpanded {
+		t.Fatal("enter did not expand")
+	}
+	view := m.View()
+	if !strings.Contains(view, "Hide matches") || !strings.Contains(view, "View") {
+		t.Fatalf("expanded view: %s", view)
+	}
+
+	m.focus = knowledgeFocusResults
+	m.knowledgeSelected = 0
+	before := m.knowledgeLinkCount()
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	if m.knowledgePreviewIdx != 0 {
+		t.Fatal("view did not open")
+	}
+	if m.knowledgeLinkCount() != before {
+		t.Fatal("view must not create a link")
+	}
+	view = m.View()
+	if !strings.Contains(view, "exponential backoff") {
+		t.Fatalf("preview missing body: %s", view)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.knowledgePreviewIdx >= 0 {
+		t.Fatal("esc did not close preview")
+	}
+	if m.knowledgeLinkCount() != before {
+		t.Fatal("close preview changed links")
+	}
+
+	m.focus = knowledgeFocusResults
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.knowledgeLinkCount() != before+1 || !m.knowledgeHits[0].Connected {
+		t.Fatal("enter did not use")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.knowledgeLinkCount() != before || m.knowledgeHits[0].Connected {
+		t.Fatal("enter on Connected did not unlink")
+	}
+
+	m.focus = knowledgeFocusToggle
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.knowledgeExpanded {
+		t.Fatal("enter did not collapse")
+	}
+	if !strings.Contains(m.View(), "5 matches") {
+		t.Fatalf("collapsed label: %s", m.View())
+	}
+}
+
+func TestKnowledgeResizeKeepsLayout(t *testing.T) {
+	m := newModel(nil, "w", uiOptions{NoColor: true, ReducedMotion: true})
+	m.threadID = "t"
+	m.status = "Ready"
+	m.reduce(knowledgeSearchEvent("item/completed", "completed", knowledgeFixtureJSON))
+	_ = m.useKnowledgeAt(0)
+	m.knowledgeExpanded = true
+	m.openKnowledgePreview(0)
+	m.openKnowledgeLinksOverlay()
+	for _, size := range []tea.WindowSizeMsg{{Width: 40, Height: 12}, {Width: 80, Height: 24}, {Width: 24, Height: 8}} {
+		m.Update(size)
+		v := m.View()
+		if strings.Count(v, "\n")+1 > m.height {
+			t.Fatalf("too tall at %dx%d: %s", size.Width, size.Height, v)
+		}
 	}
 }
 
 func TestParseKnowledgeSearchPayloadIgnoresNoise(t *testing.T) {
 	hits, ok := parseKnowledgeSearchPayload([]byte(`{"hello":"world"}`))
-	if ok || hits != nil {
-		t.Fatal("should reject")
+	if ok {
+		t.Fatalf("should reject non-items payload, hits=%v", hits)
 	}
-	_, err := json.Marshal(struct{}{})
-	if err != nil {
-		t.Fatal(err)
+}
+
+func TestRepeatedSearchResultsReuseConnectedState(t *testing.T) {
+	m := newModel(nil, "w", uiOptions{NoColor: true, ReducedMotion: true})
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.threadID = "t"
+	m.reduce(knowledgeSearchEvent("item/completed", "completed", knowledgeFixtureJSON))
+	_ = m.useKnowledgeAt(0)
+	m.reduce(knowledgeSearchEvent("item/completed", "completed", knowledgeFixtureJSON))
+	if !m.knowledgeHits[0].Connected {
+		t.Fatal("connected state lost on repeat search")
+	}
+	if m.knowledgeLinkCount() != 1 {
+		t.Fatal("duplicate link created")
 	}
 }

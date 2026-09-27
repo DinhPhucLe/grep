@@ -30,7 +30,7 @@ func TestShortTerminalKeepsConversationInputAndControls(t *testing.T) {
 			m.items = []*conversationItem{{kind: "agentMessage", raw: strings.Repeat("older answer\n", 20) + "LATEST", done: true}}
 			m.Update(tea.WindowSizeMsg{Width: w, Height: h})
 			v := m.View()
-			for _, s := range []string{"LATEST", "Ask Codex", "Enter"} {
+			for _, s := range []string{"LATEST", "Ask Codex", "F1 help"} {
 				if !strings.Contains(v, s) {
 					t.Fatalf("%dx%d missing %q: %s", w, h, s, v)
 				}
@@ -47,7 +47,7 @@ func TestSmallTerminalCapsMultilineComposer(t *testing.T) {
 	m.draft.SetValue(strings.Repeat("line\n", 10) + "draft")
 	m.Update(tea.WindowSizeMsg{Width: 40, Height: 8})
 	v := m.View()
-	if !strings.Contains(v, "VISIBLE") || !strings.Contains(v, "Enter") {
+	if !strings.Contains(v, "VISIBLE") || !strings.Contains(v, "F1 help") {
 		t.Fatal(v)
 	}
 	assertFits(t, m)

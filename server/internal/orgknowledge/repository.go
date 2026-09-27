@@ -160,13 +160,21 @@ func (s *MongoStore) Search(ctx context.Context, params SearchParams) (SearchRes
 	}
 
 	limit := int64(k)
+	fetchLimit := limit
+	authorNeedle := strings.ToLower(strings.TrimSpace(params.Author))
+	hasPostFilter := authorNeedle != "" || len(params.Properties) > 0 || params.From != nil || params.To != nil
+	if hasPostFilter {
+		// Over-fetch before post-filters so author/property/time do not starve k.
+		fetchLimit = min(int64(50), max(limit*10, limit))
+	}
+
 	pipeline := mongo.Pipeline{
 		{{Key: "$vectorSearch", Value: bson.M{
 			"index":         VectorIndexName,
 			"path":          "content",
 			"query":         query,
-			"numCandidates": limit * 20,
-			"limit":         limit,
+			"numCandidates": fetchLimit * 20,
+			"limit":         fetchLimit,
 			"filter":        filter,
 		}}},
 		{{Key: "$project", Value: bson.M{
@@ -188,7 +196,6 @@ func (s *MongoStore) Search(ctx context.Context, params SearchParams) (SearchRes
 
 	items := make([]Document, 0, len(rows))
 	scores := make([]float64, 0, len(rows))
-	authorNeedle := strings.ToLower(strings.TrimSpace(params.Author))
 	for _, row := range rows {
 		if !matchAuthor(row.Document, authorNeedle) {
 			continue
@@ -201,6 +208,9 @@ func (s *MongoStore) Search(ctx context.Context, params SearchParams) (SearchRes
 		}
 		items = append(items, row.Document)
 		scores = append(scores, row.Score)
+		if int64(len(items)) >= limit {
+			break
+		}
 	}
 	return SearchResult{Items: items, Scores: scores}, nil
 }

@@ -47,11 +47,15 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Search org knowledge',
       description: [
-        'Search the organization shared knowledge base (attributed notes from teammates: gotchas, runbooks, design decisions, code-locus tips).',
-        'Call this when the user is stuck on something another engineer in the org may already have solved, or asks who/how the team handles a pattern, library, service, or failure mode.',
-        'Prefer this before guessing org-specific conventions, retry/auth/webhook rules, or internal module behavior.',
-        'Pass a natural-language question or a short code/error snippet as query. Returns the top-k matches (default 5) with authors and optional similarity scores.',
-        'Do not use for general internet facts, public docs, or Slack history — use Slack MCP for Slack. Do not use for writing new knowledge (use knowledge_post).',
+        'Search the organization shared knowledge base: attributed teammate notes, gotchas, runbooks, design decisions, and code-locus tips that live outside any one repository.',
+        'Call this tool proactively whenever any of these apply (the user does not need to name the tool, say MCP, or say “skill”):',
+        '(1) they ask to search the knowledge base/database/org memory;',
+        '(2) they want org, team, or company-specific guidance (“how do we…”, “who handled…”, “what’s our convention for…”);',
+        '(3) they say the answer is probably not in this codebase, or ask to look outside the repo/codebase/files;',
+        '(4) they are stuck on an internal pattern, service, retry/auth/webhook rule, or failure mode another engineer may already have documented.',
+        'Prefer this before guessing org-specific behavior or searching only local files when the question is about shared team knowledge.',
+        'Pass a natural-language question or a short code/error snippet as query. Returns top-k matches (default 5) with authors and optional scores.',
+        'Do not use for general internet facts or public docs. Do not use for Slack history (use Slack MCP). Do not use to write knowledge (use knowledge_post).',
       ].join(' '),
       inputSchema: {
         query: z

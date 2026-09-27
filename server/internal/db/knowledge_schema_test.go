@@ -70,7 +70,7 @@ func TestKnowledgeMigration(t *testing.T) {
 	if !reflect.DeepEqual(drops, []map[string]string{{"drop": "knowledge_records"}}) {
 		t.Fatal("rollback affects existing collections")
 	}
-	// Check this pair independently of the pre-existing duplicate version 5.
+	// Check this pair independently of other migrations.
 	dir := t.TempDir()
 	for suffix, contents := range map[string][]byte{"up": data, "down": down} {
 		if err := os.WriteFile(filepath.Join(dir, "000007_knowledge_records."+suffix+".json"), contents, 0600); err != nil {

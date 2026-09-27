@@ -173,5 +173,5 @@ func (m *model) finishEvaluation(result evaluationDoneMsg) tea.Cmd {
 	if m.lastEvaluation.NeedsQuiz {
 		return m.prepareQuiz(result.prompt)
 	}
-	return m.call("turn/start", map[string]any{"threadId": m.threadID, "input": []map[string]any{{"type": "text", "text": result.prompt}}})
+	return m.call("turn/start", map[string]any{"threadId": m.threadID, "input": []map[string]any{{"type": "text", "text": m.promptWithConnectedKnowledge(result.prompt)}}})
 }
