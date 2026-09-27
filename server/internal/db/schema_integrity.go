@@ -25,10 +25,10 @@ func RequiredCollectionsForVersion(version uint) []string {
 	if version >= 6 {
 		required = append(required, "organizations", "organization_members", "practice_events")
 	}
-	if version >= 7 {
+	if version >= 11 {
 		required = append(required, "knowledge_records")
 	}
-	if version >= 8 {
+	if version >= 12 {
 		required = append(required, "knowledge_documents")
 	}
 	return required

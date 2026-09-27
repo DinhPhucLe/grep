@@ -42,10 +42,8 @@ Env:
 | `MCP_BACKEND` | `mock` | `mock` or `http` |
 | `CORTISOL_API_BASE` | `http://127.0.0.1:8080` | Used when `MCP_BACKEND=http` |
 
-Org knowledge volume for pitch/search demos is seeded into Atlas
-(`knowledge_documents` + voyage-code-4 autoEmbed). See
-[`docs/snowflake-marketplace-corpus.md`](../docs/snowflake-marketplace-corpus.md).
-With `MCP_BACKEND=http`, tools hit `GET/POST /api/v1/knowledge` on the Go API.
+With `MCP_BACKEND=http`, tools hit `GET/POST /api/v1/knowledge` on the Go API
+(`knowledge_documents` + Atlas voyage-code-4 autoEmbed).
 
 
 ```bash

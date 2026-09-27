@@ -343,7 +343,7 @@ dimension count. No embedding provider is selected or called.
 
 This is storage scaffolding only: no public endpoint, TUI capture, embedding
 generation, semantic search, revision tracking, or indexing worker is wired in.
-Migration `000007_knowledge_records` creates just this collection and an ordinary
+Migration `000011_knowledge_records` creates just this collection and an ordinary
 project/date/ID index. Its down migration drops the collection and all its data;
 use only after a separate rollback decision and backup.
 
