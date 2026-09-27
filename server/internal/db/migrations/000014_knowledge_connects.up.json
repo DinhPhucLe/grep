@@ -1,0 +1,65 @@
+[
+  {
+    "create": "knowledge_connects",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+          "_id",
+          "organization_id",
+          "seeker_user_id",
+          "author_user_id",
+          "document_id",
+          "session_id",
+          "topics",
+          "created_at"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "_id": { "bsonType": "objectId" },
+          "organization_id": { "bsonType": "string", "minLength": 1, "maxLength": 64 },
+          "seeker_user_id": { "bsonType": "string", "minLength": 1, "maxLength": 64 },
+          "author_user_id": { "bsonType": "string", "minLength": 1, "maxLength": 64 },
+          "document_id": { "bsonType": "string", "minLength": 1, "maxLength": 64 },
+          "session_id": { "bsonType": "string", "minLength": 1, "maxLength": 256 },
+          "topics": {
+            "bsonType": "array",
+            "minItems": 0,
+            "maxItems": 32,
+            "items": { "bsonType": "string", "minLength": 1, "maxLength": 64 }
+          },
+          "created_at": { "bsonType": "date" }
+        }
+      }
+    },
+    "validationLevel": "strict",
+    "validationAction": "error"
+  },
+  {
+    "createIndexes": "knowledge_connects",
+    "indexes": [
+      {
+        "key": { "organization_id": 1, "created_at": -1 },
+        "name": "knowledge_connects_by_org_created"
+      },
+      {
+        "key": { "seeker_user_id": 1, "created_at": -1 },
+        "name": "knowledge_connects_by_seeker_created"
+      },
+      {
+        "key": { "author_user_id": 1, "created_at": -1 },
+        "name": "knowledge_connects_by_author_created"
+      },
+      {
+        "key": {
+          "seeker_user_id": 1,
+          "document_id": 1,
+          "author_user_id": 1,
+          "session_id": 1
+        },
+        "name": "knowledge_connects_unique_edge",
+        "unique": true
+      }
+    ]
+  }
+]

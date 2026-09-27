@@ -125,8 +125,39 @@ func TestDemoRecords(t *testing.T) {
 	if counts["practice_events"] < 800 {
 		t.Fatalf("expected rich practice volume (>=800), got %d", counts["practice_events"])
 	}
+	if counts["knowledge_documents"] < 12 {
+		t.Fatalf("expected knowledge docs for both orgs (>=12), got %d", counts["knowledge_documents"])
+	}
+	if counts["knowledge_connects"] < 24 {
+		t.Fatalf("expected knowledge connects for both orgs (>=24), got %d", counts["knowledge_connects"])
+	}
 
 	cast := DemoCastIDs()
+	connectIn := map[bson.ObjectID]int{}
+	connectOut := map[bson.ObjectID]int{}
+	for _, record := range records {
+		if record.collection != "knowledge_connects" {
+			continue
+		}
+		seeker, err := bson.ObjectIDFromHex(record.document["seeker_user_id"].(string))
+		if err != nil {
+			t.Fatal(err)
+		}
+		author, err := bson.ObjectIDFromHex(record.document["author_user_id"].(string))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if seeker == author {
+			t.Fatalf("self-edge for %s", seeker.Hex())
+		}
+		connectIn[seeker]++
+		connectOut[author]++
+	}
+	for _, id := range []bson.ObjectID{cast.AlexRiveraID, cast.JordanKimID, cast.SamOkonkwoID} {
+		if connectIn[id] < 2 || connectOut[id] < 2 {
+			t.Fatalf("featured employee %s needs in>=2 out>=2 (in=%d out=%d)", id.Hex(), connectIn[id], connectOut[id])
+		}
+	}
 	if !users[cast.AlexRiveraID] || !users[cast.JordanKimID] || !users[cast.SamOkonkwoID] {
 		t.Fatal("featured employees must exist")
 	}

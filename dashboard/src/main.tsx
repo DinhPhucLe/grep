@@ -8,6 +8,7 @@ import { App, resolveRoutePath, type AppRoute } from './App';
 import { AuthProvider } from './auth/AuthProvider';
 import { dashboardTheme } from './config/theme';
 import { loadEmployeePractice, loadOrgPractice } from './data/loadPracticeViews';
+import { loadEmployeeKnowledge, loadOrgKnowledge } from './data/loadKnowledgeViews';
 import { AuthControls } from './components/AuthControls';
 import { TerminalSignIn } from './components/TerminalSignIn';
 const root = createRoot(document.getElementById('root')!);
@@ -32,13 +33,21 @@ async function loadRoute(): Promise<AppRoute> {
     if (!resolved.id) {
       throw new Error('Missing person id');
     }
-    return { kind: 'people', view: await loadEmployeePractice(resolved.id, practice) };
+    const [view, knowledge] = await Promise.all([
+      loadEmployeePractice(resolved.id, practice),
+      loadEmployeeKnowledge(resolved.id).catch(() => null),
+    ]);
+    return { kind: 'people', view, knowledge };
   }
   if (resolved.kind === 'organizations') {
     if (!resolved.id) {
       throw new Error('Missing organization id');
     }
-    return { kind: 'organizations', view: await loadOrgPractice(resolved.id, practice) };
+    const [view, knowledge] = await Promise.all([
+      loadOrgPractice(resolved.id, practice),
+      loadOrgKnowledge(resolved.id).catch(() => null),
+    ]);
+    return { kind: 'organizations', view, knowledge };
   }
   return { kind: 'landing' };
 }

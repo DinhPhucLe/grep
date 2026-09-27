@@ -5,9 +5,13 @@ import { practiceIntensityColor } from '../../utils/practiceIntensity';
 export function ActivityCalendarHeatmap({
   calendar,
   year,
+  title,
+  ariaLabel,
 }: {
   calendar: ActivityCalendar;
   year: number;
+  title?: string;
+  ariaLabel?: string;
 }) {
   const byDate = new Map(calendar.days.map((day) => [day.date, day]));
   const start = new Date(Date.UTC(year, 0, 1));
@@ -18,18 +22,16 @@ export function ActivityCalendarHeatmap({
     const hit = byDate.get(date);
     cells.push({ date, intensity: hit?.intensity ?? 0, count: hit?.count ?? 0 });
   }
+  const heading = title ?? `Practice calendar ${year}`;
+  const label = ariaLabel ?? `Practice activity calendar for ${year}`;
 
   return (
     <Paper className="heatmap-panel" p="md" radius={0} withBorder>
       <Text className="eyebrow">Activity</Text>
       <Title order={3} fz="lg" mt={4} mb="md" className="section-title">
-        Practice calendar {year}
+        {heading}
       </Title>
-      <div
-        className="practice-calendar"
-        role="img"
-        aria-label={`Practice activity calendar for ${year}`}
-      >
+      <div className="practice-calendar" role="img" aria-label={label}>
         {cells.map((cell) => (
           <div
             key={cell.date}

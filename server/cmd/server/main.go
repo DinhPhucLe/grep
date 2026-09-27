@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"cortisol-server/internal/auth"
@@ -89,13 +90,17 @@ func run() error {
 	)
 	knowledgeHub := orgknowledge.NewHub()
 	knowledgeStore := orgknowledge.NewMongoStore(database)
+	connectStore := orgknowledge.NewMongoConnectStore(database)
 	knowledgeHandler := authService.Require(orgknowledge.NewHandler(knowledgeStore, knowledgeHub))
+	connectHandler := authService.Require(orgknowledge.NewConnectHandler(knowledgeStore, connectStore))
 	eventsHandler := authService.Require(orgknowledge.NewEventsHandler(knowledgeHub))
+	knowledgeDashboard := orgknowledge.NewDashboardService(connectStore, knowledgeStore)
 
 	mux.Handle("/api/v1/practice-events", practice.NewIngestHandler(practiceService))
-	mux.Handle("/api/v1/dashboard/", practice.NewDashboardHandler(practiceService))
+	mux.Handle("/api/v1/dashboard/", newDashboardHandler(practiceService, knowledgeDashboard))
 	authService.Register(mux)
 	mux.Handle("/api/v1/knowledge", knowledgeHandler)
+	mux.Handle("/api/v1/knowledge/connects", connectHandler)
 	mux.Handle("/api/v1/knowledge/events", eventsHandler)
 
 	address := os.Getenv("HTTP_ADDR")
@@ -107,6 +112,20 @@ func run() error {
 		ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	log.Printf("server listening on %s", address)
 	return server.ListenAndServe()
+}
+
+func newDashboardHandler(practiceSvc practice.DashboardService, knowledgeSvc orgknowledge.KnowledgeDashboard) http.Handler {
+	practiceHandler := practice.NewDashboardHandler(practiceSvc)
+	knowledgeHandler := orgknowledge.NewDashboardHandler(knowledgeSvc)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/dashboard")
+		path = strings.Trim(path, "/")
+		if strings.HasSuffix(path, "/knowledge") || strings.Contains(path, "/knowledge/") {
+			knowledgeHandler.ServeHTTP(w, r)
+			return
+		}
+		practiceHandler.ServeHTTP(w, r)
+	})
 }
 
 // Register the local development API without application authentication.

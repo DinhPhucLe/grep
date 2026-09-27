@@ -1,0 +1,135 @@
+{
+  "schemaVersion": "org_knowledge.v1",
+  "generatedAt": "2026-09-27T12:00:00Z",
+  "subject": {
+    "organizationId": "660100000000000004000000",
+    "organizationName": "NovaPay",
+    "from": "2026-01-01T00:00:00Z",
+    "to": "2026-09-27T12:00:00Z"
+  },
+  "topicNetwork": {
+    "status": "available",
+    "nodes": [
+      { "id": "payments", "label": "payments", "weight": 14 },
+      { "id": "retries", "label": "retries", "weight": 11 },
+      { "id": "auth", "label": "auth", "weight": 8 },
+      { "id": "ledger", "label": "ledger", "weight": 6 },
+      { "id": "webhooks", "label": "webhooks", "weight": 5 },
+      { "id": "observability", "label": "observability", "weight": 4 }
+    ],
+    "links": [
+      { "source": "payments", "target": "retries", "weight": 9 },
+      { "source": "payments", "target": "ledger", "weight": 5 },
+      { "source": "auth", "target": "webhooks", "weight": 4 },
+      { "source": "retries", "target": "observability", "weight": 3 },
+      { "source": "ledger", "target": "webhooks", "weight": 2 }
+    ]
+  },
+  "learningDots": {
+    "status": "available",
+    "items": [
+      {
+        "id": "66010000000000000a010001",
+        "topics": ["payments", "retries"],
+        "authorUserId": "660100000000000001020000",
+        "authorName": "Jordan Kim",
+        "createdAt": "2026-02-01T10:00:00Z"
+      },
+      {
+        "id": "66010000000000000a010002",
+        "topics": ["payments", "ledger"],
+        "authorUserId": "660100000000000001010000",
+        "authorName": "Alex Rivera",
+        "createdAt": "2026-03-04T10:00:00Z"
+      },
+      {
+        "id": "66010000000000000a010003",
+        "topics": ["auth", "webhooks"],
+        "authorUserId": "660100000000000001030000",
+        "authorName": "Casey Nguyen",
+        "createdAt": "2026-04-12T10:00:00Z"
+      },
+      {
+        "id": "66010000000000000a010004",
+        "topics": ["retries", "observability"],
+        "authorUserId": "660100000000000001020000",
+        "authorName": "Jordan Kim",
+        "createdAt": "2026-05-20T10:00:00Z"
+      },
+      {
+        "id": "66010000000000000a010005",
+        "topics": ["ledger"],
+        "authorUserId": "660100000000000001010000",
+        "authorName": "Alex Rivera",
+        "createdAt": "2026-06-08T10:00:00Z"
+      },
+      {
+        "id": "66010000000000000a010006",
+        "topics": ["webhooks", "payments"],
+        "authorUserId": "660100000000000001030000",
+        "authorName": "Casey Nguyen",
+        "createdAt": "2026-07-15T10:00:00Z"
+      },
+      {
+        "id": "66010000000000000a010007",
+        "topics": ["observability"],
+        "authorUserId": "660100000000000001020000",
+        "authorName": "Jordan Kim",
+        "createdAt": "2026-08-01T10:00:00Z"
+      },
+      {
+        "id": "66010000000000000a010008",
+        "topics": ["auth", "payments"],
+        "authorUserId": "660100000000000001010000",
+        "authorName": "Alex Rivera",
+        "createdAt": "2026-09-02T10:00:00Z"
+      }
+    ]
+  },
+  "metrics": [
+    {
+      "id": "total_connects",
+      "category": "significant",
+      "label": "Total connects",
+      "status": "available",
+      "display": { "primary": "42" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "unique_seekers",
+      "category": "significant",
+      "label": "Unique seekers",
+      "status": "available",
+      "display": { "primary": "18" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "unique_teachers",
+      "category": "descriptive",
+      "label": "Unique teachers",
+      "status": "available",
+      "display": { "primary": "11" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "docs_connected",
+      "category": "descriptive",
+      "label": "Docs connected",
+      "status": "available",
+      "display": { "primary": "8" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "median_edges_per_session",
+      "category": "descriptive",
+      "label": "Median edges / session",
+      "status": "available",
+      "display": { "primary": "2" },
+      "visualization": { "type": "stat" }
+    }
+  ],
+  "summary": {
+    "status": "available",
+    "bullets": ["42 connects across 8 documents"]
+  }
+}

@@ -33,6 +33,15 @@ func (m *memoryStore) Insert(_ context.Context, doc Document) (Document, error) 
 	return doc, nil
 }
 
+func (m *memoryStore) FindByID(_ context.Context, id string) (Document, error) {
+	for _, doc := range m.docs {
+		if doc.ID.Hex() == id {
+			return doc, nil
+		}
+	}
+	return Document{}, ErrNotFound
+}
+
 func (m *memoryStore) Search(_ context.Context, params SearchParams) (SearchResult, error) {
 	k := params.K
 	if k <= 0 {

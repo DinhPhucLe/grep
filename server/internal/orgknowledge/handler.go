@@ -19,6 +19,7 @@ import (
 type Store interface {
 	Insert(ctx context.Context, doc Document) (Document, error)
 	Search(ctx context.Context, params SearchParams) (SearchResult, error)
+	FindByID(ctx context.Context, id string) (Document, error)
 }
 
 // SearchParams aligns with MCP knowledge_search arguments.
@@ -61,6 +62,104 @@ func NewHandler(store Store, hub *Hub) http.Handler {
 			w.Header().Set("Allow", "GET, POST")
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use GET or POST")
 		}
+	})
+}
+
+type connectRequest struct {
+	DocumentID string `json:"documentId"`
+	SessionID  string `json:"sessionId"`
+}
+
+type connectResponse struct {
+	Inserted int       `json:"inserted"`
+	Edges    []Connect `json:"edges"`
+}
+
+// NewConnectHandler serves POST /api/v1/knowledge/connects.
+func NewConnectHandler(docs DocumentByID, connects ConnectStore) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use POST")
+			return
+		}
+		principal, ok := principalFrom(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+			return
+		}
+		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil || media != "application/json" {
+			writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "use application/json")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		var input connectRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", "expected connect JSON object")
+			return
+		}
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			writeError(w, http.StatusBadRequest, "invalid_request", "expected connect JSON object")
+			return
+		}
+		docID := strings.TrimSpace(input.DocumentID)
+		sessionID := strings.TrimSpace(input.SessionID)
+		if docID == "" || sessionID == "" {
+			writeError(w, http.StatusBadRequest, "invalid_request", "documentId and sessionId are required")
+			return
+		}
+		doc, err := docs.FindByID(r.Context(), docID)
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "knowledge document not found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "lookup_failed", "failed to load knowledge document")
+			return
+		}
+		orgID := principal.OrganizationID.Hex()
+		if doc.OrganizationID != orgID {
+			writeError(w, http.StatusForbidden, "forbidden", "document is outside session organization")
+			return
+		}
+		seeker := principal.UserID.Hex()
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		topics := append([]string(nil), doc.Topics...)
+		edges := make([]Connect, 0, len(doc.Authors))
+		for _, author := range doc.Authors {
+			authorID := strings.TrimSpace(author.UserID)
+			if authorID == "" || authorID == seeker {
+				continue
+			}
+			edges = append(edges, Connect{
+				OrganizationID: orgID,
+				SeekerUserID:   seeker,
+				AuthorUserID:   authorID,
+				DocumentID:     doc.ID.Hex(),
+				SessionID:      sessionID,
+				Topics:         topics,
+				CreatedAt:      now,
+			})
+		}
+		if len(edges) == 0 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "no learning edges (document has no other authors)")
+			return
+		}
+		inserted, err := connects.InsertConnects(r.Context(), edges)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "persist_failed", "failed to store knowledge connects")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if inserted > 0 {
+			w.WriteHeader(http.StatusCreated)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+		_ = json.NewEncoder(w).Encode(connectResponse{Inserted: inserted, Edges: edges})
 	})
 }
 
