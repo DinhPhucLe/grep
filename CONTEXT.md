@@ -88,7 +88,7 @@ Without write + read, Slack, autocomplete, and graphs are empty.
 |------|--------|--------|
 | **Medium** | HTTP MCP server with real tool schemas (`quack`, `knowledge_search`, `knowledge_post`) + mock knowledge backends; Docker packaging for Go API + MCP; Slack via official Slack MCP (docs/config only) | **Done** — see [`mcp/`](mcp/) and root [`docker-compose.yml`](docker-compose.yml) |
 | **Small** | Fixture knowledge corpus for demos | **Done** — [`mcp/fixtures/`](mcp/fixtures/) |
-| **Next (other / follow-on)** | Go `GET/POST /api/v1/knowledge` with Atlas vector search; flip MCP from mock → HTTP client | Planned |
+| **Next (other / follow-on)** | Go `GET/POST /api/v1/knowledge` with Atlas vector search; flip MCP from mock → HTTP client; TUI knowledge hit picker | **Done** — see `server/internal/orgknowledge`, `mcp/src/http`, `server/cmd/tui/knowledge_picker.go` |
 
 **Deferred:** Slack Events bot, full code-embedding index as a second system,
 cross-org autocomplete with name chips, 3D knowledge maps.
@@ -109,7 +109,7 @@ MCP contract: [`mcp/contracts/knowledge.ts`](mcp/contracts/knowledge.ts).
 
 Agents attach to the Cortisol MCP **HTTP** endpoint (`POST /mcp`, default
 `:3100`). Tools: `quack` (smoke), `knowledge_search`, `knowledge_post`
-(knowledge backends mocked). **Slack tools are not part of Cortisol MCP** —
+(knowledge backends: `MCP_BACKEND=http` → Go API, or `mock`). **Slack tools are not part of Cortisol MCP** —
 agents use Slack’s official MCP (`https://mcp.slack.com/mcp`); see
 [`docs/slack-mcp.md`](docs/slack-mcp.md).
 
@@ -163,7 +163,7 @@ AI-Generated Code for Enhanced Learning* (IUI 2025; arXiv:2410.08922).
 
 ┌─────────────┐   MCP Streamable HTTP   ┌──────────────────┐
 │ Agent host  │ ◄──────────────────────► │  cortisol MCP    │
-│ Codex/TUI   │                          │  :3100 (mocks)   │
+│ Codex/TUI   │                          │  :3100 (HTTP→API) │
 │ Cursor/etc  │ ───────────────────────► │  Slack MCP       │
 └─────────────┘                          │  mcp.slack.com   │
                                          └──────────────────┘
@@ -171,9 +171,9 @@ AI-Generated Code for Enhanced Learning* (IUI 2025; arXiv:2410.08922).
 
 - **Go API** (`server/cmd/server`): practice, evaluations, dashboard; Atlas via
   `MONGODB_URI`.
-- **MCP** (`mcp/`): agent tools for org knowledge (+ `quack` smoke); mock
-  knowledge backends today. Slack is the official Slack MCP, configured next
-  to Cortisol in Codex/Cursor — not reimplemented here.
+- **MCP** (`mcp/`): agent tools for org knowledge (+ `quack` smoke); `MCP_BACKEND=http`
+  calls Go `/api/v1/knowledge` (mock backend still available offline). Slack is the
+  official Slack MCP, configured next to Cortisol in Codex/Cursor — not reimplemented here.
 - **Compose** packages only those two HTTP services; Atlas stays cloud-hosted.
 - **Codex** generates code in the TUI loop; **Cortex** evaluates prompts.
 

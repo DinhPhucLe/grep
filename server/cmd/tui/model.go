@@ -69,6 +69,10 @@ type model struct {
 	openSource                                func(context.Context, string, int) error
 	quizJump                                  bool
 	evaluationContext                         []evaluation.Message
+	knowledgePickerOpen                       bool
+	knowledgeHits                             []knowledgeHit
+	knowledgeSelected                         int
+	selectedKnowledge                         *knowledgeHit
 }
 type frameMsg time.Time
 type terminalSizeMsg struct{ width, height int }
@@ -337,6 +341,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.helpKey(v)
 			return m, nil
 		}
+		if m.knowledgePickerKey(v) {
+			return m, nil
+		}
 		if v.String() == "f1" {
 			m.showHelp = true
 			m.helpOffset = 0
@@ -592,6 +599,9 @@ func (m *model) reduce(msg wireMessage) {
 		i.exitCode = p.Item.ExitCode
 		if i.kind == "agentMessage" {
 			i.raw = p.Item.Text
+			if i.done {
+				m.maybeOpenKnowledgeFromText(i.raw)
+			}
 		} else if i.kind == "fileChange" {
 			i.raw = string(p.Item.Changes)
 		}

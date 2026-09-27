@@ -1,0 +1,49 @@
+[
+  {
+    "create": "knowledge_documents",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["_id", "content", "topics", "properties", "authors", "created_at", "updated_at", "organization_id"],
+        "additionalProperties": false,
+        "properties": {
+          "_id": { "bsonType": "objectId" },
+          "content": { "bsonType": "string", "minLength": 1, "maxLength": 65536 },
+          "topics": {
+            "bsonType": "array",
+            "minItems": 0,
+            "maxItems": 32,
+            "items": { "bsonType": "string", "minLength": 1, "maxLength": 64 }
+          },
+          "properties": { "bsonType": "object" },
+          "authors": {
+            "bsonType": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "bsonType": "object",
+              "required": ["user_id"],
+              "additionalProperties": false,
+              "properties": {
+                "user_id": { "bsonType": "string", "minLength": 1, "maxLength": 64 },
+                "name": { "bsonType": "string", "maxLength": 256 }
+              }
+            }
+          },
+          "created_at": { "bsonType": "date" },
+          "updated_at": { "bsonType": "date" },
+          "organization_id": { "bsonType": "string", "minLength": 1, "maxLength": 64 }
+        }
+      }
+    },
+    "validationLevel": "strict",
+    "validationAction": "error"
+  },
+  {
+    "createIndexes": "knowledge_documents",
+    "indexes": [
+      { "key": { "organization_id": 1, "created_at": -1, "_id": -1 }, "name": "knowledge_documents_by_org_created" },
+      { "key": { "organization_id": 1, "topics": 1 }, "name": "knowledge_documents_by_org_topics" }
+    ]
+  }
+]

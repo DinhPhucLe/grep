@@ -65,11 +65,27 @@ func (m *model) resize() {
 	}
 	room := m.height - m.headerRows() - m.borderRows() - m.footerRows() - statusRows - 1
 	m.draft.SetHeight(max(1, min(lines, 6, max(1, m.height/4), room)))
-	m.viewport.Width = m.width
+	convWidth := m.width
+	if m.knowledgePickerOpen {
+		side := m.knowledgePickerWidth()
+		convWidth = max(20, m.width-side)
+	}
+	m.viewport.Width = convWidth
 	m.viewport.Height = max(0, m.height-m.headerRows()-lipgloss.Height(m.bottom()))
 	if m.follow {
 		m.viewport.GotoBottom()
 	}
+}
+
+func (m *model) knowledgePickerWidth() int {
+	if !m.knowledgePickerOpen {
+		return 0
+	}
+	side := min(40, max(24, m.width/3))
+	if m.width-side < 20 {
+		return 0
+	}
+	return side
 }
 func (m *model) footer() string {
 	if m.quitMode {
@@ -90,6 +106,9 @@ func (m *model) footer() string {
 	}
 	if len(m.requests) > 0 {
 		text = "↑↓ choose · Enter confirm · ←→ pan · F1 help"
+	}
+	if m.knowledgePickerOpen {
+		text = "↑↓ pick knowledge · Enter use · Esc dismiss · F1 help"
 	}
 	if m.width < 55 {
 		text = "Enter send · F1 help"
@@ -151,7 +170,12 @@ func (m *model) View() string {
 		parts = append(parts, m.accent(ansi.Truncate(header, m.width, ""), "13"))
 	}
 	if m.viewport.Height > 0 {
-		parts = append(parts, m.conversationView())
+		if side := m.knowledgePickerWidth(); side > 0 {
+			picker := m.knowledgePickerView(side, m.viewport.Height)
+			parts = append(parts, lipgloss.JoinHorizontal(lipgloss.Top, m.conversationView(), picker))
+		} else {
+			parts = append(parts, m.conversationView())
+		}
 	}
 	bottom := m.bottom()
 	if len(m.requests) > 0 {

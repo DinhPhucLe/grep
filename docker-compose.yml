@@ -27,9 +27,13 @@ services:
       - "3100:3100"
     environment:
       MCP_HTTP_ADDR: ":3100"
-      MCP_BACKEND: mock
+      MCP_BACKEND: http
+      CORTISOL_API_BASE: http://api:8080
       CORTISOL_ORG_ID: ${CORTISOL_ORG_ID:-demo-org}
       CORTISOL_MCP_ROOT: /app
+    depends_on:
+      api:
+        condition: service_healthy
     healthcheck:
       test:
         [

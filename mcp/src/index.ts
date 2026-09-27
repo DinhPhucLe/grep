@@ -85,7 +85,7 @@ app.listen(port, host, (error?: Error) => {
     process.exit(1);
   }
   console.log(
-    `cortisol MCP (mock backend) listening on http://${host}:${port}/mcp (health: /health)`,
+    `cortisol MCP (${process.env.MCP_BACKEND ?? 'mock'} backend) listening on http://${host}:${port}/mcp (health: /health)`,
   );
 });
 
