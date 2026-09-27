@@ -12,11 +12,10 @@ import (
 	"cortisol-server/internal/db"
 	"cortisol-server/internal/evaluation"
 	"cortisol-server/internal/health"
+	"cortisol-server/internal/practice"
 	"cortisol-server/internal/quiz"
 	"cortisol-server/internal/timing"
 	"cortisol-server/internal/user"
-	"cortisol-server/internal/jobs"
-	"cortisol-server/internal/practice"
 
 	"github.com/joho/godotenv"
 )
@@ -74,19 +73,11 @@ func run() error {
 	registerRoutes(mux, handler,
 		quiz.NewHandler(answers, cortexConfig.Timeout),
 		quiz.NewAnswerHandler(answers, 10*time.Second))
-	queue := jobs.NewQueue(4, 100, service.Evaluate)
-	defer queue.Close()
 	practiceService := practice.NewService(
 		practice.NewMongoMemberChecker(database),
 		practice.NewMongoEventRepository(database),
 		practice.NewMongoDirectory(database),
 	)
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/health", health.Handler)
-	handler := evaluation.NewHandler(queue, cortexConfig.Timeout)
-	mux.HandleFunc("/evaluations", handler)
-	mux.HandleFunc("/jobs", handler)
 	mux.Handle("/api/v1/practice-events", practice.NewIngestHandler(practiceService))
 	mux.Handle("/api/v1/dashboard/", practice.NewDashboardHandler(practiceService))
 
