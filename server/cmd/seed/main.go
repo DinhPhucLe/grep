@@ -37,7 +37,7 @@ func run() error {
 	}
 
 	// CONNECT WITH A BOUNDED COMMAND LIFETIME AND ALWAYS RELEASE THE CLIENT
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	database, err := db.Connect(ctx, config)
 	if err != nil {
@@ -56,5 +56,15 @@ func run() error {
 		return fmt.Errorf("seed stopped after %d inserts (%d existing): %w", result.Inserted, result.Existing, err)
 	}
 	log.Printf("Seed complete: %d inserted, %d already existed", result.Inserted, result.Existing)
+
+	cast := seed.DemoCastIDs()
+	log.Printf("Demo cast (use these IDs in practice API / dashboard routes):")
+	log.Printf("  NovaPay org:      %s", cast.NovaPayOrgID.Hex())
+	log.Printf("  AtlasHealth org:  %s", cast.AtlasHealthOrgID.Hex())
+	log.Printf("  Alex Rivera:      %s  (NovaPay, high performer)", cast.AlexRiveraID.Hex())
+	log.Printf("  Jordan Kim:       %s  (NovaPay, improving)", cast.JordanKimID.Hex())
+	log.Printf("  Sam Okonkwo:      %s  (AtlasHealth, high volume)", cast.SamOkonkwoID.Hex())
+	log.Printf("Employee view: GET /api/v1/dashboard/people/{userId}/practices/lead_and_reveal?year=2026")
+	log.Printf("Org view:      GET /api/v1/dashboard/organizations/{orgId}/practices/lead_and_reveal")
 	return nil
 }

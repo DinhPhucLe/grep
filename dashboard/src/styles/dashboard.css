@@ -43,9 +43,27 @@ svg,
   box-shadow: var(--retro-shadow);
 }
 
-.dashboard-header {
-  background: var(--retro-surface);
+.search-suggestions {
+  border: var(--retro-border) !important;
+  border-radius: 0 !important;
+  background: var(--retro-surface) !important;
+  box-shadow: var(--retro-shadow);
+  max-height: 16rem;
+  overflow: auto;
 }
+
+.search-suggestion {
+  display: block;
+  text-align: left;
+  border: 2px solid transparent;
+}
+
+.search-suggestion:hover,
+.search-suggestion:focus-visible {
+  background: var(--retro-yellow);
+  border-color: var(--retro-ink);
+}
+
 
 .brand-mark {
   display: grid;
@@ -368,4 +386,32 @@ svg,
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+.practice-calendar {
+  display: grid;
+  grid-template-columns: repeat(53, minmax(8px, 1fr));
+  gap: 2px;
+}
+
+.practice-calendar-cell {
+  aspect-ratio: 1;
+  border: 1px solid #000;
+  image-rendering: pixelated;
+}
+
+.treemap-node {
+  border: 2px solid #000;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.treemap-row {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  min-height: 40px;
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -23,43 +22,15 @@ type seedRecord struct {
 }
 
 // DETERMINISTIC IDS KEEP GENERATED RECORDS STABLE ACROSS RUNS
-func seedID(kind, user, project, session byte) bson.ObjectID {
-	return bson.ObjectID{0x66, 0, 0, 0, 0, 0, 0, 0, kind, user, project, session}
+// Layout: [0x66][org][0..][kind][user][project][session]
+func seedID(kind, org, user, project, session byte) bson.ObjectID {
+	return bson.ObjectID{0x66, org, 0, 0, 0, 0, 0, 0, kind, user, project, session}
 }
 
-// GENERATE FOUR USERS WITH ONE OR TWO PROJECTS AND ONE TO FIVE SESSIONS EACH
-func demoRecords() []seedRecord {
-	var records []seedRecord
-	base := time.Date(2026, time.September, 26, 14, 0, 0, 0, time.UTC)
-	projectNumber := 0
-	for user := 1; user <= 4; user++ {
-		userID := seedID(1, byte(user), 0, 0)
-		userName := fmt.Sprintf("user%d", user)
-		created := base.Add(time.Duration(user-1) * 24 * time.Hour)
-		records = append(records, seedRecord{"users", bson.M{
-			"_id": userID, "name": userName, "mail": userName + "@example.com", "created_at": created,
-		}})
-		for project := 1; project <= 1+user%2; project++ {
-			projectNumber++
-			projectID := seedID(2, byte(user), byte(project), 0)
-			projectName := fmt.Sprintf("project_%d%c", user, 'A'+rune(project-1))
-			records = append(records, seedRecord{"projects", bson.M{
-				"_id": projectID, "user_id": userID, "name": projectName,
-				"root_path": fmt.Sprintf("/demo/%s/%s", userName, projectName),
-				"repo_url":  fmt.Sprintf("https://example.com/%s/%s.git", userName, projectName),
-			}})
-			for session := 1; session <= 1+(projectNumber-1)%5; session++ {
-				started := created.Add(time.Duration(project*6+session) * time.Hour)
-				records = append(records, seedRecord{"sessions", bson.M{
-					"_id": seedID(3, byte(user), byte(project), byte(session)), "project_id": projectID,
-					"agent_model": "demo-model", "started_at": started,
-					"ended_at": started.Add(time.Duration(15+session*10) * time.Minute),
-					"branch":   fmt.Sprintf("demo/session-%d", session), "status": "complete", "shell": "zsh",
-				}})
-			}
-		}
-	}
-	return records
+// PRACTICE EVENTS NEED A 16-BIT SEQUENCE BEYOND THE 4-BYTE KIND/USER/PROJECT/SESSION SLOT
+// Layout: [0x66][org][seqHi][seqLo][0..][kind=6][user][0][0]
+func seedEventID(org, user byte, seq uint16) bson.ObjectID {
+	return bson.ObjectID{0x66, org, byte(seq >> 8), byte(seq), 0, 0, 0, 0, 6, user, 0, 0}
 }
 
 // SEED DEVELOPMENT DATA WITHOUT CHANGING EXISTING DOCUMENTS
@@ -78,8 +49,8 @@ func Seed(ctx context.Context, database *mongo.Database) (SeedResult, error) {
 	if err != nil {
 		return result, fmt.Errorf("read migration version: %w", err)
 	}
-	if migration.Dirty || migration.Version < 3 {
-		return result, errors.New("seeding requires a clean migration version of at least 3; run or repair migrations first")
+	if migration.Dirty || migration.Version < 5 {
+		return result, errors.New("seeding requires a clean migration version of at least 5; run or repair migrations first")
 	}
 	names, err := database.ListCollectionNames(ctx, bson.D{})
 	if err != nil {
@@ -91,7 +62,7 @@ func Seed(ctx context.Context, database *mongo.Database) (SeedResult, error) {
 	}
 	for _, record := range demoRecords() {
 		if !collections[record.collection] {
-			return result, fmt.Errorf("required collection %s is missing; repair migrations before seeding", record.collection)
+			return result, fmt.Errorf("required collection %s is missing; migration version claims %d but schema objects are incomplete — force schema_migrations.version back to %d (dirty=false), re-run go run ./cmd/migrate, then seed again", record.collection, migration.Version, migration.Version-1)
 		}
 	}
 
