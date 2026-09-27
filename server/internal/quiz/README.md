@@ -17,10 +17,10 @@ Send `Content-Type: application/json` with:
   `content`. Each file is at most 128,000 bytes; combined text is at most 256,000
   bytes and the HTTP body at most 1 MiB. The endpoint never reads local files.
 - `max_questions`: 1–4; omitted or zero means 4.
-- For answer storage: `participant_id` (registered UUID), `project_id`, `thread_id`,
-  and `turn_id`. The TUI provides these automatically. The project key identifies
-  the local workspace; it is not a reference to the older dashboard `projects`
-  collection. These metadata fields are not sent to Snowflake.
+- For answer storage: `user_id` and `project_id` are existing MongoDB ObjectID
+  hex strings, plus Codex `thread_id` and `turn_id`. The TUI uses the locally
+  selected IDs. The server reads `users` and verifies `projects.user_id` matches
+  the selected user. These metadata fields are not sent to Snowflake.
 
 ## Response
 
@@ -66,7 +66,7 @@ submitted for grading. Future grading is predefined as individual per question,
 not a client decision. No grading API, batch submission, worker queue, or score exists.
 
 Identified generation returns `quiz_id`. The server holds at most 128 unanswered
-quiz snapshots for 24 hours. `POST /quiz-answers` accepts only `participant_id`,
+quiz snapshots for 24 hours. `POST /quiz-answers` accepts only `user_id`,
 `quiz_id`, `question_id`, and `answer` (1–8000 bytes). It looks up the question and
 code from the server snapshot, and stores a self-contained `quiz_answers` record
 with status `ungraded`. Duplicate identical submissions return the existing
@@ -74,7 +74,10 @@ receipt; different text for an answered question returns 409. Saved receipts can
 be recovered by resubmitting the same answer even after a server restart. Unsaved
 quiz snapshots do not survive restart. There is no public answer-list endpoint.
 
-Migration 8 creates the required collections and indexes. Runtime code does not
+Migration 8 creates only `quiz_answers` and its indexes. Stored user/project/quiz
+IDs are BSON ObjectIDs; identity metadata is stored at the document root, not
+inside the request snapshot. Runtime requires `one_answer_per_user_question`
+to be a non-partial unique index on `(user_id, quiz_id, question_id)`. Runtime code does not
 create missing collections or run migrations. Existing unidentified callers can
 still generate transient quizzes, but cannot save answers from those quizzes.
 

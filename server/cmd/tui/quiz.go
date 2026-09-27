@@ -3,13 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -98,9 +96,9 @@ func (m *model) startQuizGeneration() tea.Cmd {
 	ctx, cancel := context.WithTimeout(m.traceContext(), 75*time.Second)
 	q.cancel = cancel
 	request, workspace, server, baseline := q.request, m.workspace, m.apiServer(), q.baseline
-	request.ParticipantID = m.opts.ParticipantID
-	if request.ParticipantID != "" {
-		request.ProjectID = fmt.Sprintf("%x", sha256.Sum256([]byte(filepath.Clean(workspace))))
+	request.UserID = m.opts.UserID
+	if request.UserID != "" {
+		request.ProjectID = m.opts.ProjectID
 		request.ThreadID, request.TurnID = m.threadID, q.turnID
 	}
 	return func() tea.Msg {
@@ -130,7 +128,7 @@ func (m *model) startQuizGeneration() tea.Cmd {
 		if err == nil {
 			err = response.Result.Validate(request)
 		}
-		if err == nil && request.ParticipantID != "" && len(response.Questions) > 0 && response.QuizID == "" {
+		if err == nil && request.UserID != "" && len(response.Questions) > 0 && response.QuizID == "" {
 			err = fmt.Errorf("quiz API did not return a quiz ID for saving answers; update the server")
 		}
 		return quizGeneratedMsg{session: q, request: request, result: response.Result, err: err, quizID: response.QuizID}
@@ -178,7 +176,7 @@ func postQuizJSON(ctx context.Context, server, route string, input, output any) 
 		}
 		if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&failure) == nil {
 			switch failure.Error.Code {
-			case "cortex_invalid_response", "cortex_error", "quiz_timeout", "migration_required", "participant_not_found", "quiz_not_found", "answer_conflict":
+			case "cortex_invalid_response", "cortex_error", "quiz_timeout", "migration_required", "user_not_found", "project_not_found", "quiz_not_found", "answer_conflict":
 				if failure.Error.Message != "" && len(failure.Error.Message) <= 500 {
 					return fmt.Errorf("API /%s returned HTTP %d (%s): %s", route, resp.StatusCode, failure.Error.Code, failure.Error.Message)
 				}
@@ -358,7 +356,7 @@ func (m *model) quizEnter(text string) tea.Cmd {
 		m.status = "Answer is too long (maximum 8000 bytes)"
 		return nil
 	}
-	if m.opts.ParticipantID != "" {
+	if m.opts.UserID != "" {
 		if q.quizID == "" {
 			m.showQuizQuestion("Answer not saved: this quiz has no storage ID. Keep your answer and generate a new quiz with the updated server.")
 			return nil
@@ -371,12 +369,12 @@ func (m *model) quizEnter(text string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(m.traceContext(), 15*time.Second)
 		q.cancel = cancel
 		index, server := q.index, m.apiServer()
-		request := quiz.AnswerRequest{ParticipantID: m.opts.ParticipantID, QuizID: q.quizID, QuestionID: q.result.Questions[index].ID, Answer: text}
+		request := quiz.AnswerRequest{UserID: m.opts.UserID, QuizID: q.quizID, QuestionID: q.result.Questions[index].ID, Answer: text}
 		return func() tea.Msg {
 			defer cancel()
 			var receipt quiz.AnswerReceipt
 			err := postQuizJSON(ctx, server, "quiz-answers", request, &receipt)
-			if err == nil && (receipt.ID == "" || receipt.ParticipantID != request.ParticipantID || receipt.QuizID != request.QuizID || receipt.QuestionID != request.QuestionID || receipt.Status != "ungraded") {
+			if err == nil && (receipt.ID == "" || receipt.UserID != request.UserID || receipt.QuizID != request.QuizID || receipt.QuestionID != request.QuestionID || receipt.Status != "ungraded") {
 				err = fmt.Errorf("invalid answer save acknowledgment")
 			}
 			return quizAnswerSavedMsg{session: q, index: index, answer: text, err: err}

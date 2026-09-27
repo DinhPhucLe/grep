@@ -11,10 +11,10 @@ import (
 
 type AnswerRecord struct {
 	ID            bson.ObjectID `json:"id" bson:"_id"`
-	ParticipantID string        `json:"participant_id" bson:"participant_id"`
-	QuizID        string        `json:"quiz_id" bson:"quiz_id"`
+	UserID        bson.ObjectID `json:"user_id" bson:"user_id"`
+	QuizID        bson.ObjectID `json:"quiz_id" bson:"quiz_id"`
 	QuestionID    string        `json:"question_id" bson:"question_id"`
-	ProjectID     string        `json:"project_id" bson:"project_id"`
+	ProjectID     bson.ObjectID `json:"project_id" bson:"project_id"`
 	ThreadID      string        `json:"thread_id" bson:"thread_id"`
 	TurnID        string        `json:"turn_id" bson:"turn_id"`
 	Answer        string        `json:"answer" bson:"answer"`
@@ -26,7 +26,7 @@ type AnswerRecord struct {
 	Request       Request       `json:"request" bson:"request"`
 }
 
-// Insert must enforce uniqueness of (participant_id, quiz_id, question_id).
+// Insert must enforce uniqueness of (user_id, quiz_id, question_id).
 // It must never overwrite an existing record, and reports ErrAnswerConflict
 // on duplicate keys. Find reports ErrAnswerNotFound for absent records.
 type AnswerRepository interface {
@@ -41,9 +41,17 @@ type MongoAnswerRepository struct {
 func NewMongoAnswerRepository(database *mongo.Database) *MongoAnswerRepository {
 	return &MongoAnswerRepository{database: database, collection: database.Collection("quiz_answers")}
 }
-func (r *MongoAnswerRepository) Find(ctx context.Context, participantID, quizID, questionID string) (AnswerRecord, error) {
+func (r *MongoAnswerRepository) Find(ctx context.Context, userID, quizID, questionID string) (AnswerRecord, error) {
+	user, err := bson.ObjectIDFromHex(userID)
+	if err != nil {
+		return AnswerRecord{}, err
+	}
+	quiz, err := bson.ObjectIDFromHex(quizID)
+	if err != nil {
+		return AnswerRecord{}, err
+	}
 	var record AnswerRecord
-	err := r.collection.FindOne(ctx, bson.M{"participant_id": participantID, "quiz_id": quizID, "question_id": questionID}).Decode(&record)
+	err = r.collection.FindOne(ctx, bson.M{"user_id": user, "quiz_id": quiz, "question_id": questionID}).Decode(&record)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return AnswerRecord{}, ErrAnswerNotFound
 	}
@@ -57,6 +65,40 @@ func (r *MongoAnswerRepository) Insert(ctx context.Context, record AnswerRecord)
 		return AnswerRecord{}, err
 	}
 	if len(names) == 0 {
+		return AnswerRecord{}, ErrMigrationRequired
+	}
+	cursor, err := r.collection.Indexes().List(ctx)
+	if err != nil {
+		return AnswerRecord{}, err
+	}
+	defer cursor.Close(ctx)
+	ready := false
+	for cursor.Next(ctx) {
+		var index struct {
+			Name    string `bson:"name"`
+			Unique  bool   `bson:"unique"`
+			Key     bson.D `bson:"key"`
+			Sparse  bool   `bson:"sparse"`
+			Partial bson.M `bson:"partialFilterExpression"`
+		}
+		if err := cursor.Decode(&index); err != nil {
+			return AnswerRecord{}, err
+		}
+		if index.Name != "one_answer_per_user_question" || !index.Unique || index.Sparse || len(index.Partial) != 0 || len(index.Key) != 3 {
+			continue
+		}
+		valid := true
+		for i, field := range []string{"user_id", "quiz_id", "question_id"} {
+			if index.Key[i].Key != field || (index.Key[i].Value != int32(1) && index.Key[i].Value != int64(1)) {
+				valid = false
+			}
+		}
+		ready = ready || valid
+	}
+	if err := cursor.Err(); err != nil {
+		return AnswerRecord{}, err
+	}
+	if !ready {
 		return AnswerRecord{}, ErrMigrationRequired
 	}
 	_, err = r.collection.InsertOne(ctx, record)

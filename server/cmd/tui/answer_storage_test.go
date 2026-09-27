@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const testParticipantID = "12345678-1234-4234-8234-123456789abc"
+const testUserID = "66f600000000000000000001"
 
 func TestAnswerSaveFailureRetainsDraftAndRetryIsIndividual(t *testing.T) {
 	calls := 0
@@ -23,7 +23,7 @@ func TestAnswerSaveFailureRetainsDraftAndRetryIsIndividual(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			t.Error(err)
 		}
-		if input["participant_id"] != testParticipantID || input["quiz_id"] != "quiz-run" || input["question_id"] != "q1" || input["answer"] != "my answer" || len(input) != 4 {
+		if input["user_id"] != testUserID || input["quiz_id"] != "quiz-run" || input["question_id"] != "q1" || input["answer"] != "my answer" || len(input) != 4 {
 			t.Errorf("wrong answer payload: %+v", input)
 		}
 		calls++
@@ -32,11 +32,12 @@ func TestAnswerSaveFailureRetainsDraftAndRetryIsIndividual(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"id":"answer-id","participant_id":"12345678-1234-4234-8234-123456789abc","quiz_id":"quiz-run","question_id":"q1","status":"ungraded","created_at":"2026-09-27T00:00:00Z"}`))
+		w.Write([]byte(`{"id":"answer-id","user_id":"66f600000000000000000001","quiz_id":"quiz-run","question_id":"q1","status":"ungraded","created_at":"2026-09-27T00:00:00Z"}`))
 	}))
 	defer server.Close()
 	m := generatedFilesQuizModel(t, server.URL)
-	m.opts.ParticipantID = testParticipantID
+	m.opts.UserID = testUserID
+	m.opts.ProjectID = "66f600000000000000000003"
 	m.quiz.quizID = "quiz-run"
 	m.quiz.result = twoQuestions()
 	m.quiz.phase = "question"
@@ -75,16 +76,14 @@ func TestStaleAnswerSaveCannotChangeNewQuiz(t *testing.T) {
 	}
 }
 
-func TestParticipantRegistrationPrecedesPromptEvaluation(t *testing.T) {
+func TestPromptEvaluationDoesNotRegisterIdentity(t *testing.T) {
 	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
 		if r.Header.Get("Authorization") != "" {
-			t.Error("participant ID became auth")
+			t.Error("user ID became auth")
 		}
 		switch r.URL.Path {
-		case "/participants":
-			w.Write([]byte(`{"id":"12345678-1234-4234-8234-123456789abc","created_at":"2026-09-27T00:00:00Z","last_seen_at":"2026-09-27T00:00:00Z"}`))
 		case "/evaluations":
 			w.Write([]byte(`{"evaluation":{"verdict":"not_applicable","summary":"Confirmation","ambiguity_score":null,"gaps":[]}}`))
 		default:
@@ -92,51 +91,33 @@ func TestParticipantRegistrationPrecedesPromptEvaluation(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	m := newModel(nil, t.TempDir(), uiOptions{EvaluationServer: server.URL, ParticipantID: testParticipantID})
+	m := newModel(nil, t.TempDir(), uiOptions{EvaluationServer: server.URL, UserID: testUserID})
 	m.connected = true
 	m.draft.SetValue("yes")
 	_, evaluate := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	_, send := m.Update(evaluate())
-	if send == nil || strings.Join(paths, ",") != "/participants,/evaluations" {
-		t.Fatalf("wrong registration flow: %v", paths)
+	if send == nil || strings.Join(paths, ",") != "/evaluations" {
+		t.Fatalf("evaluation should run directly: %v", paths)
 	}
 }
 
-func TestQuizGenerationCarriesParticipantAndStorageID(t *testing.T) {
+func TestQuizGenerationCarriesUserAndStorageID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request quiz.Request
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Error(err)
 		}
-		if request.ParticipantID != testParticipantID || len(request.ProjectID) != 64 || request.ThreadID != "thread" || request.TurnID != "turn" {
+		if request.UserID != testUserID || request.ProjectID != "66f600000000000000000003" || request.ThreadID != "thread" || request.TurnID != "turn" {
 			t.Errorf("missing quiz provenance: %+v", request)
 		}
 		json.NewEncoder(w).Encode(quiz.Response{QuizID: "quiz-run", Result: twoQuestions()})
 	}))
 	defer server.Close()
 	m := generatedFilesQuizModel(t, server.URL)
-	m.opts.ParticipantID = testParticipantID
+	m.opts.UserID = testUserID
+	m.opts.ProjectID = "66f600000000000000000003"
 	m.Update(m.startQuizGeneration()())
 	if m.quiz.quizID != "quiz-run" || m.quiz.phase != "question" {
 		t.Fatal("quiz storage ID was lost")
-	}
-}
-
-func TestRegistrationFailurePreservesPromptWithoutEvaluating(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/participants" {
-			t.Errorf("registration failure allowed %s", r.URL.Path)
-		}
-		w.WriteHeader(503)
-		w.Write([]byte(`{"error":{"code":"migration_required","message":"Participant storage migration is required"}}`))
-	}))
-	defer server.Close()
-	m := newModel(nil, t.TempDir(), uiOptions{EvaluationServer: server.URL, ParticipantID: testParticipantID})
-	m.connected = true
-	m.draft.SetValue("build a search")
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	_, send := m.Update(cmd())
-	if send != nil || m.busy || m.draft.Value() != "build a search" || !strings.Contains(m.status, "migration") {
-		t.Fatalf("lost prompt or registration reason: %s", m.status)
 	}
 }

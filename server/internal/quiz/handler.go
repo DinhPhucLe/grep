@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"cortisol-server/internal/cortex"
-	"cortisol-server/internal/participant"
 )
 
 type Generator interface {
@@ -70,8 +69,10 @@ func newHandler[T, R any](process func(context.Context, T) (R, error), timeout t
 			return
 		case errors.Is(err, ErrInvalidQuizMetadata):
 			writeError(w, 400, "invalid_request", ErrInvalidQuizMetadata.Error())
-		case errors.Is(err, ErrParticipantNotFound):
-			writeError(w, 404, "participant_not_found", ErrParticipantNotFound.Error())
+		case errors.Is(err, ErrUserNotFound):
+			writeError(w, 404, "user_not_found", ErrUserNotFound.Error())
+		case errors.Is(err, ErrProjectNotFound):
+			writeError(w, 404, "project_not_found", ErrProjectNotFound.Error())
 		case errors.Is(err, ErrQuizNotFound):
 			writeError(w, 404, "quiz_not_found", ErrQuizNotFound.Error())
 		case errors.Is(err, ErrQuestionNotFound):
@@ -80,7 +81,7 @@ func newHandler[T, R any](process func(context.Context, T) (R, error), timeout t
 			writeError(w, 409, "answer_conflict", ErrAnswerConflict.Error())
 		case errors.Is(err, ErrQuizCapacity):
 			writeError(w, 503, "quiz_capacity", ErrQuizCapacity.Error())
-		case errors.Is(err, ErrMigrationRequired), errors.Is(err, participant.ErrMigrationRequired):
+		case errors.Is(err, ErrMigrationRequired):
 			writeError(w, 503, "migration_required", "quiz storage is not ready; a database migration is required")
 		case errors.Is(err, cortex.ErrUpstream):
 			writeError(w, 502, "cortex_error", "Cortex could not complete the quiz request")

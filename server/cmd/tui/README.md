@@ -87,16 +87,24 @@ to `http://127.0.0.1:8080`; override it with
 `go run ./cmd/tui --evaluation-server http://localhost:8080` from `server/`.
 The local evaluation and quiz APIs require no application login or session token.
 
-The TUI creates a persistent anonymous UUID in `cortisol/participant.json` under
-the OS user config directory (`~/Library/Application Support` on macOS). Keep
-that file to keep the same participant history. It registers the profile before
-each prompt; `--participant-name "Ada"` optionally sets a display name. Omitting
-the flag on later runs preserves the name. No email, password, or login is used.
-The profile ID is a record identifier, not an access credential.
+Evaluation goes directly to `/evaluations`; it never registers a profile.
+To save answers, select an existing user and a project owned by that user:
 
-Participant and answer collections require migration 8. Runtime registration
-reports `migration_required` rather than implicitly creating missing storage.
-Database migrations must be explicitly approved before being applied.
+```sh
+go run ./cmd/tui --user-id USER_OBJECT_ID --project-id PROJECT_OBJECT_ID
+```
+
+Use lowercase 24-character ObjectID hex values. The TUI remembers this selection
+per working directory in `cortisol/users.json` under `os.UserConfigDir()` (on macOS,
+`~/Library/Application Support`). These are existing record references, not
+credentials. The server reads users and projects and checks project ownership;
+it never creates or changes those records. Without a selection, chat and quizzes
+work, with answers explicitly labeled local only, not saved.
+
+Saving requires the separately approved migration 8 (`quiz_answers` and indexes).
+Null-score evaluation persistence requires migration 7. Neither runs on startup
+or during a request. Get explicit approval before applying migrations.
+
 Configure the server's Snowflake credentials in `server/.env` for Cortex calls.
 Evaluation includes the original prompt and recent user/assistant conversation
 (up to 50 messages within the API text limit); repository file contents are not
@@ -135,7 +143,7 @@ For an ambiguous implementation request:
    `/reveal` ends review early after Codex finishes.
 
 The TUI keeps the answer draft until the server acknowledges the save. A failed
-save offers Enter to retry; the participant/quiz/question key prevents duplicate
+save offers Enter to retry; the user/quiz/question key prevents duplicate
 answers, including a retry after a lost response. Changing an already saved
 answer returns a conflict. This is a storage retry, not another graded attempt.
 Quiz IDs refer to temporary server snapshots: a restart or 24-hour expiry makes

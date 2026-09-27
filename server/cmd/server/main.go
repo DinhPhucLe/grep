@@ -12,9 +12,9 @@ import (
 	"cortisol-server/internal/db"
 	"cortisol-server/internal/evaluation"
 	"cortisol-server/internal/health"
-	"cortisol-server/internal/participant"
 	"cortisol-server/internal/quiz"
 	"cortisol-server/internal/timing"
+	"cortisol-server/internal/user"
 
 	"github.com/joho/godotenv"
 )
@@ -67,11 +67,10 @@ func run() error {
 
 	handler := evaluation.NewHandler(service, cortexConfig.Timeout)
 	quizService := quiz.NewService(cortexClient, cortexConfig.Model)
-	profiles := participant.NewMongoRepository(database)
-	answers := quiz.NewAnswerStore(quiz.NewMongoAnswerRepository(database), profiles, quizService)
+	users := user.NewMongoRepository(database)
+	answers := quiz.NewAnswerStore(quiz.NewMongoAnswerRepository(database), users, quizService)
 	registerRoutes(mux, handler,
 		quiz.NewHandler(answers, cortexConfig.Timeout),
-		participant.NewHandler(profiles, 10*time.Second),
 		quiz.NewAnswerHandler(answers, 10*time.Second))
 
 	address := os.Getenv("HTTP_ADDR")
@@ -85,10 +84,10 @@ func run() error {
 }
 
 // Register the local development API without application authentication.
-func registerRoutes(mux *http.ServeMux, evaluate, generate, participants, answers http.HandlerFunc) {
+func registerRoutes(mux *http.ServeMux, evaluate, generate, answers http.HandlerFunc) {
 	mux.HandleFunc("/health", health.Handler)
 	for route, handler := range map[string]http.HandlerFunc{
-		"evaluations": evaluate, "quizzes": generate, "participants": participants, "quiz-answers": answers,
+		"evaluations": evaluate, "quizzes": generate, "quiz-answers": answers,
 	} {
 		mux.Handle("/"+route, timing.HTTP(route, handler))
 	}

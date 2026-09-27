@@ -1,37 +1,35 @@
-# Quiz answer storage and Codex scoring — proposal
+# Quiz answer storage and Codex scoring
 
-Status: participant profiles and individual ungraded answer persistence are now authorized and implemented in source. Migration 8 is prepared but remains unapplied pending explicit approval. Codex grading and embeddings remain planning only.
+Status: individual ungraded answer storage uses existing users and projects in source.
+Migration files are prepared for review; applying migrations requires explicit approval.
+Codex grading and embeddings remain planning only.
 
 ## Current implementation
 
-- One persistent local UUID identifies the participant without authentication. `/participants` stores the profile; optional names require no email or password.
-- The TUI saves each answer via `/quiz-answers` before advancing. Failed saves preserve the draft and can be retried idempotently.
-- Generated quizzes are held temporarily in a bounded, expiring server registry. Saved answer records contain the server's question and source snapshot, so grading does not depend on later edits or client-supplied evidence.
-- MongoDB collections `participants` and `quiz_answers` require migration 8, which has not been applied. Runtime writes refuse missing collections. Both numeric and null-score evaluations are saved in `evaluations`; null-score conversations still skip quizzes. The nullable validator requires migration 7, restored for review but not applied in this change.
-- There is no answer grading, embedding generation, or public answer-history endpoint yet.
-
-## Storage design
-
-Use a MongoDB collection named `quiz_answers` (the collection equivalent of a table). One document represents one submitted answer to one question. Embed the question and grading evidence in that document initially so interpretation does not depend on mutable files or an unsaved quiz object.
-
-Suggested fields:
-
-| Group | Fields and purpose |
-| --- | --- |
-| Identity | `_id`, `participant_id`, `project_id`, `codex_thread_id`, `codex_turn_id`, `quiz_run_id`, `question_id`, `evaluation_id` when available |
-| Question | Text, topic, flagged gaps, generator model and prompt version |
-| Evidence | Repository identity, commit when available, normalized paths, line ranges, symbols/concepts when known, content hashes, and enough source snapshot/context to judge the answer |
-| Submission | Answer text, submission timestamp, idempotency key |
-| Evaluation | `status: pending/completed/failed`, accuracy, completeness, overall score, covered/missing points, short evidence-based explanation, grader model, rubric version, scoring timestamp |
-| Later embeddings | Concept/context text, vector, embedding model/version, generation timestamp |
-
-`q1` is only unique within a quiz. Use a unique index on `(quiz_run_id, question_id, participant_id)` for the current one-answer-per-question policy. A repeated identical submission returns the existing record; conflicting text does not silently overwrite it. Index participant/project/time for history queries. Do not use bare line numbers as stable identities: files move and lines change, and uncommitted code may differ from the recorded commit.
-
-The user selected a persistent local participant UUID to preserve the no-login flow, stored separately from existing users. A local UUID identifies an installation/profile, not a verified person, and is not access control. Do not add authentication as part of this proposal.
-
-Save each answer before grading so failures do not lose it. The server should retain the generated question/evidence and validate answer links against that record; do not trust an answer request to supply its own authoritative question or score. Initially this can be a bounded in-memory quiz registry, with answer documents becoming self-contained on submission. Unanswered questions would not survive a server restart; durable quiz runs can be added later if resume/abandonment tracking is required.
-
-Individual answer submission is implemented. A participant/project history read operation remains future work. Show a save error without discarding the local draft. Resending the same submission must not create a second answer or a second grade. No batch-query endpoint or answer worker pool is part of this first slice.
+- The TUI remembers existing `users._id` and `projects._id` selected through
+  `--user-id` and `--project-id`, per workspace, in `cortisol/users.json`.
+- There is no registration, generated identity, authentication, or new user field.
+  Evaluation goes directly to `/evaluations`, independent of answer storage.
+- The server checks user existence and project ownership before identified quiz
+  generation and answer submission. IDs identify records; they are not credentials.
+- With a selection, the TUI saves each answer via `/quiz-answers` before advancing.
+  Failed saves preserve the draft; identical retries return the existing answer.
+  Without a selection, chat and quizzes work and answers are labeled local only.
+- The server retains at most 128 quiz snapshots for 24 hours. Saved answers embed
+  the authoritative question and source snapshot. Unanswered quizzes do not survive
+  a server restart, but saved answers remain retryable after restart.
+- Migration 8 creates only `quiz_answers`. Root `user_id`, `project_id`, and
+  `quiz_id` use BSON ObjectIDs. The unique index is `(user_id, quiz_id, question_id)`;
+  the history index is `(user_id, project_id, created_at descending)`.
+- The request snapshot contains prompt/context, evaluation, and source files;
+  identity and Codex thread/turn IDs live at the document root. See
+  `docs/quiz-answer-migration-review.md` for the exact schema.
+- Numeric and null-score evaluations are saved in `evaluations`; null-score
+  conversations still skip quizzes. Migration 7 supplies the nullable validator.
+- No runtime code creates collections, indexes, users, or projects. No migration
+  is executed without explicit approval. Missing answer schema blocks saves,
+  not ordinary evaluation/chat.
+- There is no grading, embedding generation, or public answer-history endpoint yet.
 
 ## Proposed second slice: grade individually with Codex
 
@@ -54,7 +52,7 @@ Start with ordinary queries over scored answers grouped by project, file/module,
 
 Then embed question/topic plus relevant code context to retrieve related concepts across files and versions. Optionally embed answers separately for misconception clustering. Vector similarity groups related material; it does not itself measure knowledge or correctness. Use the graded answers and repeated observations for that inference.
 
-Keep participant/project boundaries when retrieving history. Choose the embedding provider, dimensions, and vector index after agreeing on data scope; Codex grading does not automatically provide an embedding vector. Version embeddings so model changes can be reindexed.
+Keep user/project boundaries when retrieving history. Choose the embedding provider, dimensions, and vector index after agreeing on data scope; Codex grading does not automatically provide an embedding vector. Version embeddings so model changes can be reindexed.
 
 ## Delivery order and checks
 
@@ -64,4 +62,4 @@ Keep participant/project boundaries when retrieving history. Choose the embeddin
 4. Add the isolated Codex grader; calibrate with correct, incomplete, contradictory, and irrelevant answers. Check that failure preserves the answer and cannot mutate the workspace or coding conversation.
 5. Add ordinary topic history, then evaluate whether embeddings improve retrieval enough to justify the additional pipeline.
 
-Storage was subsequently authorized by the user. Applying the prepared migration still requires explicit approval. Scoring and embeddings are not implemented or authorized by this plan alone.
+Storage against existing users is authorized by the user. Applying the prepared migration still requires explicit approval. Scoring and embeddings are not implemented or authorized by this plan alone.

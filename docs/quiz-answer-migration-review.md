@@ -57,11 +57,11 @@ The down migration drops **only `quiz_answers`**, including any answers stored
 there. A future rollback therefore needs a backup/export if those answers must be
 kept, and explicit approval before execution.
 
-Only migration files and this review note were changed in this step. The earlier
-participant-based application draft has not yet been converted to existing users:
-that integration must be revised before enabling writes against this schema.
-In particular, it must use ObjectId user/project references, the new unique-index
-name, and a request snapshot without participant metadata.
+The application now uses existing users and projects, stores ObjectID references,
+checks project ownership, checks the unique index, and omits identity metadata
+from the nested request snapshot. Users and projects are read only; their schemas
+and records are unchanged. The TUI remembers an explicitly selected user/project
+locally and does not register a profile before evaluation.
 
 Validation performed without a database connection:
 
@@ -72,4 +72,4 @@ go test ./internal/db -count=1
 ```
 
 These checks validate migration structure and JSON syntax; they do not apply the
-commands or prove live MongoDB acceptance. **No migration has been applied.**
+commands or prove live MongoDB acceptance. **No migration was applied during these checks.**

@@ -21,15 +21,15 @@ type File struct {
 }
 
 type Request struct {
-	ParticipantID string               `json:"participant_id,omitempty" bson:"participant_id,omitempty"`
-	ProjectID     string               `json:"project_id,omitempty" bson:"project_id,omitempty"`
-	ThreadID      string               `json:"thread_id,omitempty" bson:"thread_id,omitempty"`
-	TurnID        string               `json:"turn_id,omitempty" bson:"turn_id,omitempty"`
-	Input         string               `json:"input" bson:"input"`
-	Context       string               `json:"context,omitempty" bson:"context,omitempty"`
-	Conversation  []evaluation.Message `json:"conversation,omitempty" bson:"conversation,omitempty"`
-	Evaluation    evaluation.Body      `json:"evaluation" bson:"evaluation"`
-	Files         []File               `json:"files" bson:"files"`
+	UserID       string               `json:"user_id,omitempty" bson:"user_id,omitempty"`
+	ProjectID    string               `json:"project_id,omitempty" bson:"project_id,omitempty"`
+	ThreadID     string               `json:"thread_id,omitempty" bson:"thread_id,omitempty"`
+	TurnID       string               `json:"turn_id,omitempty" bson:"turn_id,omitempty"`
+	Input        string               `json:"input" bson:"input"`
+	Context      string               `json:"context,omitempty" bson:"context,omitempty"`
+	Conversation []evaluation.Message `json:"conversation,omitempty" bson:"conversation,omitempty"`
+	Evaluation   evaluation.Body      `json:"evaluation" bson:"evaluation"`
+	Files        []File               `json:"files" bson:"files"`
 	// Zero/omitted defaults to four. Callers may lower the cap to any value from one to four.
 	MaxQuestions int `json:"max_questions,omitempty" bson:"max_questions,omitempty"`
 }

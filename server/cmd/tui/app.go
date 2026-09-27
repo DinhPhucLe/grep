@@ -22,7 +22,8 @@ func main() {
 	evaluationServer := flag.String("evaluation-server", "http://127.0.0.1:8080", "Go evaluation API base URL")
 	approvalPolicy := flag.String("approval-policy", "on-request", "Codex execution approvals: on-request or never (workspace sandbox stays enabled)")
 	timingLog := flag.String("timing-log", "", "append payload-free latency events to this JSONL file")
-	participantName := flag.String("participant-name", "", "optional display name for your local participant profile (no login)")
+	userID := flag.String("user-id", "", "existing MongoDB user ID for saving quiz answers (no login)")
+	projectID := flag.String("project-id", "", "existing MongoDB project ID owned by the selected user")
 	flag.Parse()
 	if *viewFlag {
 		if err := viewSessionLog(flag.Arg(0)); err != nil {
@@ -38,7 +39,7 @@ func main() {
 		// Windows terminals may omit TERM even though styling is supported.
 		lipgloss.SetColorProfile(termenv.ANSI256)
 	}
-	if err := run(*logFlag, uiOptions{NoIcons: *icons, ReducedMotion: *motion, NoColor: *noColor, EvaluationServer: *evaluationServer, ApprovalPolicy: *approvalPolicy, TimingLog: *timingLog, ParticipantName: *participantName}); err != nil {
+	if err := run(*logFlag, uiOptions{NoIcons: *icons, ReducedMotion: *motion, NoColor: *noColor, EvaluationServer: *evaluationServer, ApprovalPolicy: *approvalPolicy, TimingLog: *timingLog, UserID: *userID, ProjectID: *projectID}); err != nil {
 		fmt.Fprintln(os.Stderr, "tui:", err)
 		os.Exit(1)
 	}
@@ -50,18 +51,19 @@ func run(logging bool, opts uiOptions) error {
 	}
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		return fmt.Errorf("find participant config directory: %w", err)
+		return fmt.Errorf("find user selection directory: %w", err)
 	}
-	opts.ParticipantID, err = loadParticipantID(configDir)
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
+	selection, err := loadUserSelection(configDir, cwd, opts.UserID, opts.ProjectID)
+	if err != nil {
+		return err
+	}
+	opts.UserID, opts.ProjectID = selection.UserID, selection.ProjectID
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	var logger *sessionLogger
 	if logging {
 		logger = newSessionLogger()
