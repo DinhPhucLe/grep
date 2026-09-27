@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"cortisol-server/internal/evaluation"
+	"cortisol-server/internal/quiz"
 	"cortisol-server/internal/timing"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -22,7 +23,14 @@ func TestClarificationOnlyTurnReturnsToChatWithoutQuizAPI(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/evaluations" {
 			quizCalls.Add(1)
-			w.WriteHeader(500)
+			var request quiz.Request
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Error(err)
+			}
+			if request.Evaluation.AmbiguityScore == nil || request.Evaluation.Verdict != "ambiguous" {
+				t.Error("original evaluation was lost")
+			}
+			json.NewEncoder(w).Encode(quiz.Response{Result: fourQuestions()})
 			return
 		}
 		var input evaluation.Request
@@ -98,6 +106,22 @@ func TestClarificationOnlyTurnReturnsToChatWithoutQuizAPI(t *testing.T) {
 	if !found {
 		t.Fatal("clarification missing from follow-up evaluation context")
 	}
+	if m.quiz.phase != "running" || m.lastEvaluation.Record.Evaluation.AmbiguityScore != nil {
+		t.Fatal("unrated reply did not resume the original pending quiz")
+	}
+	if err := os.WriteFile(filepath.Join(m.workspace, "main.go"), []byte("one\ntwo\nthree\nfour\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m.Update(event("turn/started", `{"threadId":"thread","turn":{"id":"implementation","status":"inProgress"}}`))
+	m.Update(event("item/completed", `{"threadId":"thread","turnId":"implementation","item":{"id":"change","type":"fileChange","status":"completed","changes":[{"path":"main.go","kind":{"type":"add"}}]}}`))
+	_, generate := m.Update(event("turn/completed", `{"threadId":"thread","turn":{"id":"implementation","status":"completed"}}`))
+	if generate == nil {
+		t.Fatal("implementation after clarification did not trigger quiz")
+	}
+	m.Update(generate())
+	if quizCalls.Load() != 1 || m.quiz.phase != "question" || !strings.Contains(m.quiz.panel.raw, "Question 1/4") {
+		t.Fatalf("quiz was not rendered after the implementation: calls=%d phase=%s status=%s panel=%+v", quizCalls.Load(), m.quiz.phase, m.status, m.quiz.panel)
+	}
 }
 
 func TestQuizCollectionErrorsStillFailWithoutAPI(t *testing.T) {
@@ -151,5 +175,17 @@ func TestUnchangedGitWorkspaceReturnsToChat(t *testing.T) {
 	_, next := m.Update(m.startQuizGeneration()())
 	if next != nil || m.quizActive() || m.busy {
 		t.Fatal("unchanged files caused a quiz or failure")
+	}
+}
+
+func TestNewClearRequestDiscardsPendingQuiz(t *testing.T) {
+	m := testQuizModel(t, "")
+	m.Update(m.startQuizGeneration()())
+	old := m.quiz
+	score := 0.1
+	m.evaluating = true
+	cmd := m.finishEvaluation(evaluationDoneMsg{sequence: m.evaluationSequence, prompt: "change the title to Hello", record: evaluation.Record{Evaluation: evaluation.Body{Verdict: "clear", Summary: "Specific edit", AmbiguityScore: &score, Gaps: []evaluation.Gap{}}}})
+	if cmd == nil || m.quizActive() || old.phase != "done" {
+		t.Fatal("new clear implementation inherited pending quiz")
 	}
 }

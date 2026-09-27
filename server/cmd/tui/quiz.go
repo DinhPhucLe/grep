@@ -23,7 +23,7 @@ type quizSession struct {
 	result            quiz.Result
 	baseline          fileSnapshot
 	turnID            string
-	phase             string // preparing, running, generating, question, saving, reveal, done
+	phase             string // preparing, running, generating, awaiting_reply, question, saving, reveal, done
 	quizID            string
 	index             int
 	sourceIndex       int
@@ -55,7 +55,9 @@ type quizAnswerSavedMsg struct {
 	err     error
 }
 
-func (m *model) quizActive() bool { return m.quiz != nil && m.quiz.phase != "done" }
+func (m *model) quizActive() bool {
+	return m.quiz != nil && m.quiz.phase != "done" && m.quiz.phase != "awaiting_reply"
+}
 
 func (m *model) prepareQuiz(prompt string) tea.Cmd {
 	q := &quizSession{request: quiz.Request{Input: prompt, Evaluation: m.lastEvaluation.Record.Evaluation, Conversation: m.evaluationContext}, phase: "preparing"}
@@ -227,6 +229,11 @@ func (m *model) handleQuizMessage(msg tea.Msg) tea.Cmd {
 				timing.Record(m.traceContext(), "quiz.skipped_no_files", q.generationStarted, nil, map[string]int{"files": 0})
 			}
 			m.finishQuiz("")
+			if len(q.request.Files) == 0 {
+				// Keep the original evaluation and baseline across clarification
+				// turns, while leaving the composer available for normal chat.
+				q.phase = "awaiting_reply"
+			}
 			return nil
 		}
 		q.phase = "question"

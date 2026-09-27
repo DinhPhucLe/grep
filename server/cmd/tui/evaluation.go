@@ -144,6 +144,17 @@ func (m *model) finishEvaluation(result evaluationDoneMsg) tea.Cmd {
 		return nil // Keep the draft; do not send an unevaluated prompt to Codex.
 	}
 	score := result.record.Evaluation.AmbiguityScore
+	if m.quiz != nil && m.quiz.phase == "awaiting_reply" {
+		if score == nil {
+			// The reply stays unrated; implementation still belongs to the
+			// original ambiguous request and its workspace baseline.
+			m.quiz.phase = "running"
+			m.quiz.turnID = ""
+		} else {
+			// A new implementation request supersedes the pending one.
+			m.quiz.phase = "done"
+		}
+	}
 	m.lastEvaluation = &promptEvaluation{Record: result.record, NeedsQuiz: score != nil && *score > ambiguityThreshold}
 	branch := "Pass — no quiz"
 	if m.lastEvaluation.NeedsQuiz {
