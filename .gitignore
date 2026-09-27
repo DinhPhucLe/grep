@@ -218,6 +218,7 @@ schemas/
 # TUI session debug logs
 **/tui/log/
 .superpowers/
+docs/superpowers/
 
 # Ruff stuff:
 .ruff_cache/
