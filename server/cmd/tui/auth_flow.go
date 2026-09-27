@@ -75,7 +75,6 @@ func (m *model) beginLogout() tea.Cmd {
 func (m *model) setAuthIdentity(creds sessionCredentials) {
 	m.authCreds = creds
 	m.auth = &authIdentity{Token: creds.Token, Name: creds.Name, GitHubLogin: creds.GitHubLogin, OrgName: creds.OrgName, OrgID: creds.OrgID}
-	m.opts.UserID = creds.UserID
 	m.clipboardNotice = fmt.Sprintf("Logged in as %s · %s", displayLogin(creds), creds.OrgName)
 }
 

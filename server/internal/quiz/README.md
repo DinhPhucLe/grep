@@ -18,7 +18,8 @@ Send `Content-Type: application/json` with:
   bytes and the HTTP body at most 1 MiB. The endpoint never reads local files.
 - `max_questions`: 1–4; omitted or zero means 4.
 - For answer storage: `user_id` is an existing MongoDB ObjectID hex string,
-  plus Codex `thread_id` and `turn_id`. The TUI uses the locally selected user.
+  plus Codex `thread_id` and `turn_id`. The TUI uses the current signed-in user's
+  ID from its session for both quiz generation and answer submission.
   The server checks that the user exists. These metadata fields are not sent
   to Snowflake.
 
@@ -62,7 +63,7 @@ skips the quiz. No generated files also skips generation entirely.
 Answers are graded individually by an isolated Codex CLI run before submission.
 The TUI sends one answer, score (`graded`, 0–1), and `reasoning` to
 `POST /quiz-answers`; partial and incorrect answers require reasoning. The
-server validates the input, checks the selected user, and uses its
+server validates the input, checks that the user exists, and uses its
 quiz snapshot to add `quiz_question`, the original `prompt`, and `created_at`.
 The record also retains `quiz_id` and `question_id` for unique submissions. Identical retries return the existing receipt;
 conflicting answers or grades return 409. No grade API or batching is used.

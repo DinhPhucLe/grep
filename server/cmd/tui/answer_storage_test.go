@@ -14,6 +14,46 @@ import (
 
 const testUserID = "66f600000000000000000001"
 
+func TestQuizRequestsUseCurrentSignedInUser(t *testing.T) {
+	for _, userID := range []string{"66f600000000000000000002", "66f600000000000000000003"} {
+		t.Run(userID, func(t *testing.T) {
+			var generatedUser, savedUser string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/quizzes":
+					var input quiz.Request
+					if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+						t.Error(err)
+					}
+					generatedUser = input.UserID
+					json.NewEncoder(w).Encode(quiz.Response{QuizID: "quiz-run", Result: twoQuestions()})
+				case "/quiz-answers":
+					var input quiz.AnswerRequest
+					if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+						t.Error(err)
+					}
+					savedUser = input.UserID
+					json.NewEncoder(w).Encode(quiz.AnswerReceipt{ID: "answer-id", UserID: userID, QuizID: "quiz-run", QuestionID: "q1", Status: "graded", Graded: 1})
+				default:
+					t.Errorf("unexpected route: %s", r.URL.Path)
+				}
+			}))
+			defer server.Close()
+			m := generatedFilesQuizModel(t, server.URL)
+			m.setAuthIdentity(sessionCredentials{Token: "session-token", UserID: testUserID})
+			m.Update(sessionChecked{token: "session-token", creds: sessionCredentials{Token: "session-token", UserID: userID}})
+			m.Update(m.startQuizGeneration()())
+			if generatedUser != userID || m.quiz.phase != "question" {
+				t.Fatalf("quiz owner = %q, want current session user %q", generatedUser, userID)
+			}
+			m.Update(m.startAnswerSave("my answer", answerGrade{Accuracy: 1})())
+			if savedUser != userID || m.quiz.phase != "reveal" {
+				t.Fatalf("answer owner = %q, want current session user %q; phase = %s", savedUser, userID, m.quiz.phase)
+			}
+		})
+	}
+}
+
 func TestAnswerSaveFailureRetainsDraftAndRetryIsIndividual(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +84,7 @@ func TestAnswerSaveFailureRetainsDraftAndRetryIsIndividual(t *testing.T) {
 	}))
 	defer server.Close()
 	m := generatedFilesQuizModel(t, server.URL)
-	m.opts.UserID = testUserID
+	m.setAuthIdentity(sessionCredentials{Token: "session-token", UserID: testUserID})
 	m.quiz.quizID = "quiz-run"
 	m.quiz.result = twoQuestions()
 	m.quiz.phase = "question"
@@ -110,7 +150,8 @@ func TestPromptEvaluationDoesNotRegisterIdentity(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	m := newModel(nil, t.TempDir(), uiOptions{EvaluationServer: server.URL, UserID: testUserID})
+	m := newModel(nil, t.TempDir(), uiOptions{EvaluationServer: server.URL})
+	m.setAuthIdentity(sessionCredentials{Token: "session-token", UserID: testUserID})
 	m.connected = true
 	m.draft.SetValue("yes")
 	_, evaluate := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -133,7 +174,7 @@ func TestQuizGenerationCarriesUserAndStorageID(t *testing.T) {
 	}))
 	defer server.Close()
 	m := generatedFilesQuizModel(t, server.URL)
-	m.opts.UserID = testUserID
+	m.setAuthIdentity(sessionCredentials{Token: "session-token", UserID: testUserID})
 	m.Update(m.startQuizGeneration()())
 	if m.quiz.quizID != "quiz-run" || m.quiz.phase != "question" {
 		t.Fatal("quiz storage ID was lost")

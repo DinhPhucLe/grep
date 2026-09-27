@@ -82,7 +82,6 @@ func runWorkspace(parent context.Context, logging bool, opts uiOptions, creds se
 	if err != nil {
 		return false, err
 	}
-	opts.UserID = creds.UserID
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	var logger *sessionLogger

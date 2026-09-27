@@ -109,7 +109,7 @@ func (m *model) startQuizGeneration() tea.Cmd {
 	ctx, cancel := context.WithTimeout(m.traceContext(), 75*time.Second)
 	q.cancel = cancel
 	request, workspace, server, baseline := q.request, m.workspace, m.apiServer(), q.baseline
-	request.UserID = m.opts.UserID
+	request.UserID = m.authCreds.UserID
 	if request.UserID != "" {
 		request.ThreadID, request.TurnID = m.threadID, q.turnID
 	}
@@ -295,7 +295,7 @@ func (m *model) handleQuizMessage(msg tea.Msg) tea.Cmd {
 			v.grade.Explanation = ""
 		}
 		q.pendingAnswer, q.pendingGrade = v.answer, &v.grade
-		if m.opts.UserID != "" {
+		if m.authCreds.UserID != "" {
 			return m.startAnswerSave(v.answer, v.grade)
 		}
 		if strings.TrimSpace(m.draft.Value()) == v.answer {
@@ -347,7 +347,7 @@ func (m *model) startAnswerSave(answer string, grade answerGrade) tea.Cmd {
 	q.cancel = cancel
 	index, server := q.index, m.apiServer()
 	score := grade.Accuracy
-	request := quiz.AnswerRequest{UserID: m.opts.UserID, QuizID: q.quizID, QuestionID: q.result.Questions[index].ID, Answer: answer, Graded: &score, Reasoning: grade.Explanation}
+	request := quiz.AnswerRequest{UserID: m.authCreds.UserID, QuizID: q.quizID, QuestionID: q.result.Questions[index].ID, Answer: answer, Graded: &score, Reasoning: grade.Explanation}
 	return func() tea.Msg {
 		defer cancel()
 		var receipt quiz.AnswerReceipt
@@ -391,8 +391,8 @@ func (m *model) showQuizQuestion(feedback string) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Question %d/%d\n", q.index+1, q.questionCount())
 	b.WriteString("Review the implementation in your editor, then answer. Codex evaluates each answer.\n")
-	if m.opts.UserID == "" {
-		b.WriteString("Answers will stay local. Restart with --user-id to save them.\n")
+	if m.authCreds.UserID == "" {
+		b.WriteString("Answers will stay local. Sign in to save them.\n")
 	}
 	fmt.Fprintf(&b, "\n%s\n", question.Question)
 	if feedback != "" {
@@ -453,13 +453,13 @@ func (m *model) quizEnter(text string) tea.Cmd {
 		m.status = "Answer is too long (maximum 8000 bytes)"
 		return nil
 	}
-	if m.opts.UserID != "" {
+	if m.authCreds.UserID != "" {
 		if q.quizID == "" {
 			m.showQuizQuestion("Answer not saved: this quiz has no storage ID. Keep your answer and generate a new quiz with the updated server.")
 			return nil
 		}
 	}
-	if q.pendingGrade != nil && q.pendingAnswer == text && m.opts.UserID != "" {
+	if q.pendingGrade != nil && q.pendingAnswer == text && m.authCreds.UserID != "" {
 		return m.startAnswerSave(text, *q.pendingGrade)
 	}
 	q.pendingGrade = nil
