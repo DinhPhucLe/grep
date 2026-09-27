@@ -3,6 +3,7 @@ package identity
 
 import (
 	"context"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -19,6 +20,7 @@ type Principal struct {
 	OrganizationID bson.ObjectID
 	OrgName        string
 	SessionID      bson.ObjectID
+	ExpiresAt      time.Time
 }
 
 // WithPrincipal stores p on ctx.

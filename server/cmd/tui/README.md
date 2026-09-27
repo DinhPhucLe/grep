@@ -97,24 +97,25 @@ still apply; commands requiring extra access fail instead of prompting. This
 does not suppress quiz questions or other user-input requests. Restart the TUI
 to start a thread with the new policy; existing threads retain their policy.
 
-Start the Go HTTP server before submitting prompts. The evaluation API defaults
-to `http://127.0.0.1:8080`; override it with
-`go run ./cmd/tui --evaluation-server http://localhost:8080` from `server/`.
-The local evaluation and quiz APIs require no application login or session token.
+Start the Go HTTP server and dashboard before opening the TUI. If signed out,
+the terminal displays a locked sign-in screen. Press Enter to open the dashboard,
+sign in with GitHub, and click **Connect terminal** after checking the connection
+code. The terminal unlocks automatically and only then starts the agent process.
 
-Evaluation goes directly to `/evaluations`; it never registers a profile.
-To save answers, select the existing user who should own them:
+The TUI uses `CORTISOL_SERVER_URL` (default `http://127.0.0.1:8080`) and
+`CORTISOL_DASHBOARD_URL` (default `http://localhost:5173`). Both dashboard and
+terminal must connect to the same API. If a browser cannot open automatically,
+use the URL displayed in the terminal; press R for a new connection link.
 
-```sh
-go run ./cmd/tui --user-id USER_OBJECT_ID
-```
+The dashboard and connected terminal share one session. `/logout` revokes it for
+both. Both clients check the session every five seconds; the terminal also
+validates saved credentials on startup and locks when validation fails. After
+signing in again, the TUI opens a fresh agent thread. Credentials are stored in
+`~/.cortisol/credentials`; quiz answers use the authenticated user's ID.
 
-Use lowercase 24-character ObjectID hex values. The TUI remembers this selection
-per working directory in `cortisol/users.json` under `os.UserConfigDir()` (on macOS,
-`~/Library/Application Support`). These are existing record references, not
-credentials. The server checks that the selected user exists; it never
-creates or changes that record. Without a selection, chat and quizzes
-work, with answers explicitly labeled local only, not saved.
+The evaluation API defaults to `http://127.0.0.1:8080`; override it with
+`--evaluation-server`. The local evaluation and quiz HTTP endpoints still do not
+require a bearer token; the TUI itself enforces the login requirement.
 
 Saving graded answers without a project uses migration 10, applied with approval.
 Migration 8 created `quiz_answers`; migration 9 added the graded fields. Null-score evaluation

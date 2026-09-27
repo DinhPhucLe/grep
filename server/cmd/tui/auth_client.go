@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,19 +14,55 @@ import (
 	"time"
 )
 
+var errSessionInvalid = errors.New("session expired; sign in on the dashboard")
+
+var authHTTPClient = &http.Client{
+	Timeout:       20 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+func validateSession(ctx context.Context, creds sessionCredentials) (sessionCredentials, error) {
+	if strings.TrimRight(creds.ServerURL, "/") != cortisolServerURL() {
+		return sessionCredentials{}, errors.New("saved session belongs to another server; sign in again")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cortisolServerURL()+"/api/v1/auth/me", nil)
+	if err != nil {
+		return sessionCredentials{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+creds.Token)
+	res, err := authHTTPClient.Do(req)
+	if err != nil {
+		return sessionCredentials{}, fmt.Errorf("could not verify sign-in: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode == 401 {
+		return sessionCredentials{}, errSessionInvalid
+	}
+	if res.StatusCode != 200 {
+		return sessionCredentials{}, fmt.Errorf("could not verify sign-in (HTTP %d)", res.StatusCode)
+	}
+	var session sessionAPIResponse
+	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&session); err != nil {
+		return sessionCredentials{}, err
+	}
+	if session.User.ID == "" || session.Organization.ID == "" {
+		return sessionCredentials{}, errors.New("incomplete session response")
+	}
+	session.Token = creds.Token
+	return credentialsFromSession(session), nil
+}
+
+func credentialsFromSession(s sessionAPIResponse) sessionCredentials {
+	return sessionCredentials{Token: s.Token, ExpiresAt: parseSessionExpiry(s.ExpiresAt),
+		UserID: s.User.ID, Name: s.User.Name, GitHubLogin: s.User.GitHubLogin,
+		OrgID: s.Organization.ID, OrgName: s.Organization.Name, ServerURL: cortisolServerURL()}
+}
+
 func cortisolServerURL() string {
 	if u := strings.TrimSpace(os.Getenv("CORTISOL_SERVER_URL")); u != "" {
 		return strings.TrimRight(u, "/")
 	}
 	return "http://127.0.0.1:8080"
-}
-
-type deviceStartResponse struct {
-	DeviceCode      string `json:"deviceCode"`
-	UserCode        string `json:"userCode"`
-	VerificationURI string `json:"verificationUri"`
-	ExpiresIn       int    `json:"expiresIn"`
-	Interval        int    `json:"interval"`
 }
 
 type sessionAPIResponse struct {
@@ -49,32 +86,21 @@ type apiErrorBody struct {
 	} `json:"error"`
 }
 
-func startGitHubDevice(ctx context.Context) (deviceStartResponse, error) {
-	var out deviceStartResponse
-	err := postJSON(ctx, cortisolServerURL()+"/api/v1/auth/github/device", nil, "", &out)
-	return out, err
-}
-
-func pollGitHubDevice(ctx context.Context, deviceCode string) (sessionAPIResponse, string, error) {
-	var out sessionAPIResponse
-	code, err := postJSONStatus(ctx, cortisolServerURL()+"/api/v1/auth/github/poll", map[string]string{
-		"deviceCode": deviceCode,
-	}, "", &out)
-	return out, code, err
-}
-
 func logoutSession(ctx context.Context, token string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cortisolServerURL()+"/api/v1/auth/logout", nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	res, err := http.DefaultClient.Do(req)
+	res, err := authHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<16))
+	if res.StatusCode != http.StatusNoContent && res.StatusCode != http.StatusUnauthorized {
+		return fmt.Errorf("logout failed (HTTP %d); please try again", res.StatusCode)
+	}
 	return nil
 }
 
@@ -103,7 +129,7 @@ func postJSONStatus(ctx context.Context, url string, body any, token string, des
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := authHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -112,7 +138,7 @@ func postJSONStatus(ctx context.Context, url string, body any, token string, des
 	if err != nil {
 		return "", err
 	}
-	if res.StatusCode == http.StatusAccepted || res.StatusCode >= 400 {
+	if res.StatusCode == http.StatusAccepted || res.StatusCode >= 300 {
 		var envelope apiErrorBody
 		_ = json.Unmarshal(raw, &envelope)
 		code := envelope.Error.Code

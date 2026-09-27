@@ -113,4 +113,28 @@ describe('AuthControls', () => {
     });
     expect(screen.getByText('https://github.com/login/device')).toBeInTheDocument();
   });
+
+  it('explains a missing auth endpoint without sending users to GitHub', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('404 page not found\n', {
+      status: 404,
+      headers: { 'Content-Type': 'text/plain' },
+    })));
+
+    renderAuth();
+    fireEvent.click(await screen.findByRole('button', { name: /Sign in/i }));
+    expect(await screen.findByText(/Sign-in is unavailable on the running server/)).toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('does not show the GitHub link when the service omits the code', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })));
+
+    renderAuth();
+    fireEvent.click(await screen.findByRole('button', { name: /Sign in/i }));
+    expect(await screen.findByText(/did not return a verification code/)).toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
 });

@@ -240,6 +240,16 @@ GitHub **device flow** (CLI-friendly). Env: `GITHUB_CLIENT_ID`, optional
 | POST | `/api/v1/auth/github/poll` | Body `{ "deviceCode" }`. **202** while pending; **200** `{ token, expiresAt, user, organization }` when done |
 | GET | `/api/v1/auth/me` | Bearer → current user + default org |
 | POST | `/api/v1/auth/logout` | Bearer → invalidate session (**204**) |
+| POST | `/api/v1/auth/cli/start` | Create a 10-minute terminal handoff → `{ id, secret, expiresIn }`; keep `secret` in the terminal only |
+| POST | `/api/v1/auth/cli/approve` | Dashboard bearer + `{ "id" }` → approve sharing that session (**204**) |
+| POST | `/api/v1/auth/cli/poll` | `{ "id", "secret" }` → **202** pending, **200** shared session, **410** expired/already claimed |
+
+The TUI opens the dashboard with `#terminal=<id>`. The user signs in normally and
+explicitly connects the terminal after checking its displayed connection code.
+Successful polling consumes the handoff and returns the existing dashboard session;
+logout in either client revokes it for both. `/auth/me` includes `expiresAt`.
+Handoffs live in one API process and are lost on restart; deployments with multiple
+API instances need shared handoff storage or sticky routing. They do not add a MongoDB collection.
 
 On first login the user is upserted by `github_id` and **auto-joined** to the
 default organization. **Org invitations are deferred.**

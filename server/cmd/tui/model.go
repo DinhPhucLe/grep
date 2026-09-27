@@ -87,7 +87,9 @@ type model struct {
 	knowledgePreviewIdx                       int
 	knowledgePreviewOffset                    int
 	auth                                      *authIdentity
-	authDeviceCode                            string
+	authCreds                                 sessionCredentials
+	authEnforced, returnToLogin               bool
+	loggingOut                                bool
 	sseCancel                                 context.CancelFunc
 	knowledgeLiveCh                           <-chan knowledgeLiveMsg
 }
@@ -126,10 +128,14 @@ func tick() tea.Cmd {
 	return tea.Tick(time.Second/30, func(t time.Time) tea.Msg { return frameMsg(t) })
 }
 func (m *model) Init() tea.Cmd {
-	if m.client == nil {
-		return tea.Batch(tick(), m.loadAuthOnStart())
+	authCmd := m.loadAuthOnStart()
+	if m.authEnforced {
+		authCmd = tea.Batch(m.watchKnowledgeEvents(m.authCreds.Token), m.sessionCheckLater())
 	}
-	return tea.Batch(tick(), m.loadAuthOnStart(), m.wait(), func() tea.Msg {
+	if m.client == nil {
+		return tea.Batch(tick(), authCmd)
+	}
+	return tea.Batch(tick(), authCmd, m.wait(), func() tea.Msg {
 		ctx, cancel := context.WithTimeout(m.ctx, 30*time.Second)
 		defer cancel()
 		if err := m.client.Initialize(ctx); err != nil {
@@ -144,6 +150,9 @@ func (m *model) Init() tea.Cmd {
 }
 func (m *model) wait() tea.Cmd { return func() tea.Msg { return m.client.events.next(m.ctx) } }
 func (m *model) call(method string, p any) tea.Cmd {
+	if m.authEnforced && (m.auth == nil || m.loggingOut) {
+		return nil
+	}
 	if method == "turn/start" {
 		m.codexStarted = time.Now()
 	}
@@ -166,6 +175,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if cmd, handled := m.handleAuthMsg(msg); handled {
 		return m, cmd
+	}
+	if m.authEnforced && m.auth == nil {
+		return m, nil
+	}
+	if m.loggingOut {
+		switch msg.(type) {
+		case tea.KeyMsg, tea.MouseMsg, clipboardResult:
+			return m, nil
+		}
 	}
 	switch v := msg.(type) {
 	case quizPreparedMsg, quizGeneratedMsg, quizAnswerSavedMsg, quizAnswerGradedMsg:
@@ -609,11 +627,11 @@ func (m *model) reduce(msg wireMessage) {
 		ThreadID, TurnID, ItemID, Delta string
 		Item                            struct {
 			ID, Type, Text, Status, Command, Server, Tool string
-			AggregatedOutput                             *string
-			ExitCode                                     *int
-			Changes                                      json.RawMessage
-			Result                                       json.RawMessage
-			Arguments                                    json.RawMessage
+			AggregatedOutput                              *string
+			ExitCode                                      *int
+			Changes                                       json.RawMessage
+			Result                                        json.RawMessage
+			Arguments                                     json.RawMessage
 		}
 		Turn struct {
 			ID, Status string

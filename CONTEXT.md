@@ -171,8 +171,11 @@ AI-Generated Code for Enhanced Learning* (IUI 2025; arXiv:2410.08922).
 
 - **Go API** (`server/cmd/server`): practice, evaluations, dashboard, **GitHub
   device-flow auth**, org knowledge (+ SSE); Atlas via `MONGODB_URI`.
-- **Auth (demo):** TUI `/login` starts GitHub device flow; API issues a bearer
-  session. Every new GitHub user is **auto-joined into the default org**
+- **Auth (demo):** The TUI blocks use while signed out and opens dashboard sign-in.
+  GitHub device flow runs on the dashboard, which approves a short-lived terminal
+  handoff. Both clients then share the same bearer session and logout; the TUI
+  verifies saved sessions before starting the agent and polls for revocation.
+  Every new GitHub user is **auto-joined into the default org**
   (`CORTISOL_DEFAULT_ORG_ID`, defaults to seeded NovaPay). Knowledge GET/POST
   require `Authorization: Bearer` and derive `authors` + `organizationId` from
   the session (clients cannot spoof attribution). Live updates:

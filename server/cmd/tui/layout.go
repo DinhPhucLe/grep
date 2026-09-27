@@ -165,6 +165,12 @@ func (m *model) bottom() string {
 }
 
 func (m *model) View() string {
+	if m.loggingOut {
+		return fitScreen("Signing out of your terminal and dashboard…", m.width, m.height)
+	}
+	if m.authEnforced && m.auth == nil {
+		return fitScreen("Sign-in required. Returning to the dashboard sign-in screen…", m.width, m.height)
+	}
 	if m.showHelp {
 		return m.helpView()
 	}
@@ -210,7 +216,7 @@ Drag over conversation text: select it
 Ctrl+C: copy selected text
 Ctrl+V / Insert: paste into the composer
 /quit: exit (also works during approvals)
-/login: GitHub device login
+/login: dashboard sign-in status
 /logout: clear local session
 F1 or Esc: close this help`
 

@@ -21,6 +21,7 @@ export function AuthControls() {
   const [verificationUri, setVerificationUri] = useState('https://github.com/login/device');
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [logoutError, setLogoutError] = useState('');
   const deviceCodeRef = useRef('');
   const intervalRef = useRef(5);
   const pollTimer = useRef<number | null>(null);
@@ -36,7 +37,14 @@ export function AuthControls() {
     stopPolling();
     const delayMs = Math.max(1, intervalRef.current) * 1000;
     pollTimer.current = window.setTimeout(async () => {
-      const result = await pollGitHubDevice(deviceCodeRef.current);
+      let result;
+      try {
+        result = await pollGitHubDevice(deviceCodeRef.current);
+      } catch (error) {
+        setBusy(false);
+        setStatus(error instanceof Error ? error.message : 'Could not check GitHub authorization. Please try again.');
+        return;
+      }
       if (result.status === 'pending') {
         if (result.code === 'slow_down') {
           intervalRef.current += 1;
@@ -122,7 +130,8 @@ export function AuthControls() {
               <Menu.Item
                 color="red"
                 onClick={() => {
-                  void logout();
+                  setLogoutError('');
+                  void logout().catch(() => setLogoutError('Could not sign out. Please try again.'));
                 }}
               >
                 Log out
@@ -135,6 +144,7 @@ export function AuthControls() {
           </Button>
         )}
       </div>
+      {logoutError && <Text role="alert" c="red">{logoutError}</Text>}
 
       <Modal
         opened={modalOpen}
@@ -145,19 +155,20 @@ export function AuthControls() {
         classNames={{ content: 'auth-modal', header: 'auth-modal' }}
       >
         <Stack gap="md">
-          <Text className="secondary-text">
-            Open the verification link, enter the code, then return here. This uses the same device
-            flow as the TUI.
-          </Text>
           {userCode ? (
-            <Group gap="sm" align="center">
-              <Text fw={700}>Code</Text>
-              <Code className="auth-user-code">{userCode}</Code>
-            </Group>
+            <>
+              <Text className="secondary-text">
+                Open GitHub, enter the code below, and approve sign-in. This page will sign you in automatically.
+              </Text>
+              <Group gap="sm" align="center">
+                <Text fw={700}>Code</Text>
+                <Code className="auth-user-code">{userCode}</Code>
+              </Group>
+              <Anchor href={verificationUri} target="_blank" rel="noreferrer">
+                {verificationUri}
+              </Anchor>
+            </>
           ) : null}
-          <Anchor href={verificationUri} target="_blank" rel="noreferrer">
-            {verificationUri}
-          </Anchor>
           {status ? <Text size="sm">{status}</Text> : null}
           <Group justify="flex-end">
             <Button variant="default" radius={0} onClick={closeModal}>

@@ -57,8 +57,9 @@ go run ./cmd/seed
 
 ### 3. Configure GitHub OAuth (team login)
 
-Login uses **GitHub device flow** (same for the dashboard **Sign in** button and
-TUI `/login`). Knowledge search/post require a session from this flow.
+Login uses **GitHub device flow** on the dashboard. The TUI opens the dashboard
+and waits for the user to connect the terminal to that session. Knowledge
+search/post require a session from this flow.
 
 #### Create the OAuth App (one shared app for the team is fine)
 
@@ -96,7 +97,12 @@ upserted and **auto-joined** into the default org (seeded NovaPay unless
    **Sign in** → open the GitHub link → enter the code → avatar appears.
    Click the avatar → **Log out**.
 3. **TUI:** with `CORTISOL_SERVER_URL=http://127.0.0.1:8080`, run
-   `go run ./cmd/tui`, then type `/login` (or `/logout`).
+   `go run ./cmd/tui` from `server/`. When signed out, press **Enter** to open
+   the dashboard. Sign in there, check that the connection code matches your
+   terminal, then click **Connect terminal**. The TUI unlocks automatically.
+   Set `CORTISOL_DASHBOARD_URL` if the dashboard is not at `http://localhost:5173`.
+   Both clients must use the same API. The agent starts only after login succeeds.
+   Type `/logout` to sign out in both the TUI and its connected dashboard session.
 4. **MCP HTTP backend:** after login, pass the session token:
 
 ```bash
@@ -106,7 +112,14 @@ export MCP_BACKEND=http
 ```
 
 Dashboard sessions are stored in the browser (`localStorage`). TUI sessions are
-in `~/.cortisol/credentials` (mode `0600`).
+in `~/.cortisol/credentials` (mode `0600`). After connecting, they share a session
+token. Both clients check for revocation every five seconds; the TUI also validates
+saved credentials with the API on startup and locks if it cannot verify them.
+The signed-in user owns quiz answers; manual `--user-id` selection is no longer used.
+
+Terminal connection links expire after ten minutes and can be claimed once using
+a separate secret held only by the TUI. Pending connections are kept in API memory;
+after an API restart, press **R** in the terminal to create a new connection.
 
 ### 4. Run the HTTP API
 
@@ -194,7 +207,7 @@ export CORTISOL_SERVER_URL=http://127.0.0.1:8080
 go run ./cmd/tui
 ```
 
-Use `/login` for GitHub device login (see step 3). Full MCP steps:
+When signed out, press Enter to sign in through the dashboard (see step 3). Full MCP steps:
 [`docs/codex-mcp.md`](docs/codex-mcp.md). The TUI does not load MCP
 itself — `codex app-server` reads that file.
 

@@ -65,6 +65,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // The terminal shares this session. Notice logout/revocation there, and sync
+  // browser tabs immediately when localStorage changes.
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    let checking = false;
+    const check = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const live = await fetchMe(session.token);
+        if (!cancelled && !live) {
+          clearStoredSession();
+          setSessionState(null);
+        }
+      } catch {
+        // A temporary network outage does not mean the session was revoked.
+      } finally { checking = false; }
+    };
+    const timer = window.setInterval(() => void check(), 5000);
+    window.addEventListener('focus', check);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', check);
+    };
+  }, [session?.token]);
+
+  useEffect(() => {
+    const sync = (event: StorageEvent) => {
+      if (event.key === 'cortisol.dashboard.session' || event.key === null) {
+        setSessionState(loadStoredSession());
+      }
+    };
+    window.addEventListener('storage', sync);
+    return () => window.removeEventListener('storage', sync);
+  }, []);
+
   const setSession = useCallback((next: AuthSession | null) => {
     if (next) {
       storeSession(next);
@@ -76,11 +114,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     const token = session?.token;
-    setSessionState(null);
-    clearStoredSession();
     if (token) {
       await logoutSession(token);
     }
+    setSessionState(null);
+    clearStoredSession();
   }, [session?.token]);
 
   const value = useMemo(

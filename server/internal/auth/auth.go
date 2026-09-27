@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cortisol-server/internal/identity"
@@ -34,13 +35,13 @@ const (
 )
 
 var (
-	ErrUnauthorized     = errors.New("unauthorized")
-	ErrInvalidConfig    = errors.New("invalid auth config")
-	ErrDevicePending    = errors.New("authorization_pending")
-	ErrDeviceSlowDown   = errors.New("slow_down")
-	ErrDeviceExpired    = errors.New("expired_token")
-	ErrDeviceDenied     = errors.New("access_denied")
-	ErrDeviceBadCode    = errors.New("incorrect_device_code")
+	ErrUnauthorized   = errors.New("unauthorized")
+	ErrInvalidConfig  = errors.New("invalid auth config")
+	ErrDevicePending  = errors.New("authorization_pending")
+	ErrDeviceSlowDown = errors.New("slow_down")
+	ErrDeviceExpired  = errors.New("expired_token")
+	ErrDeviceDenied   = errors.New("access_denied")
+	ErrDeviceBadCode  = errors.New("incorrect_device_code")
 )
 
 // Config is loaded from the process environment.
@@ -115,9 +116,11 @@ func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 
 // Service owns GitHub device flow and session persistence.
 type Service struct {
-	db     *mongo.Database
-	cfg    Config
-	client GitHubAPI
+	db        *mongo.Database
+	cfg       Config
+	client    GitHubAPI
+	handoffMu sync.Mutex
+	handoffs  map[string]*cliHandoff
 }
 
 // GitHubAPI is the GitHub OAuth/device seam (mockable in tests).
@@ -170,6 +173,9 @@ func (s *Service) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/github/poll", s.handleDevicePoll)
 	mux.HandleFunc("GET /api/v1/auth/me", s.handleMe)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.handleLogout)
+	mux.HandleFunc("POST /api/v1/auth/cli/start", s.handleCLIStart)
+	mux.Handle("POST /api/v1/auth/cli/approve", s.Require(http.HandlerFunc(s.handleCLIApprove)))
+	mux.HandleFunc("POST /api/v1/auth/cli/poll", s.handleCLIPoll)
 }
 
 // Require loads a bearer session into context or returns 401.
@@ -221,6 +227,7 @@ func (s *Service) Authenticate(ctx context.Context, rawToken string) (Principal,
 		OrganizationID: orgID,
 		OrgName:        orgName,
 		SessionID:      sess.ID,
+		ExpiresAt:      sess.ExpiresAt,
 	}, nil
 }
 
@@ -314,6 +321,7 @@ func (s *Service) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
+		"expiresAt": principal.ExpiresAt,
 		"user": User{
 			ID:          principal.UserID,
 			Name:        principal.Name,
@@ -334,7 +342,10 @@ func (s *Service) handleLogout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "bearer token required")
 		return
 	}
-	_, _ = s.db.Collection(SessionsCollection).DeleteOne(r.Context(), bson.M{"token_hash": hashToken(token)})
+	if _, err := s.db.Collection(SessionsCollection).DeleteOne(r.Context(), bson.M{"token_hash": hashToken(token)}); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "logout_failed", "Could not sign out. Please try again.")
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -481,6 +492,7 @@ func decodeJSON(r *http.Request, dst any) error {
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
 }

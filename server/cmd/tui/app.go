@@ -22,7 +22,6 @@ func main() {
 	evaluationServer := flag.String("evaluation-server", "http://127.0.0.1:8080", "Go evaluation API base URL")
 	approvalPolicy := flag.String("approval-policy", "on-request", "Codex execution approvals: on-request or never (workspace sandbox stays enabled)")
 	timingLog := flag.String("timing-log", "", "append payload-free latency events to this JSONL file")
-	userID := flag.String("user-id", "", "existing MongoDB user ID for saving quiz answers (no login)")
 	flag.Parse()
 	if *viewFlag {
 		if err := viewSessionLog(flag.Arg(0)); err != nil {
@@ -38,7 +37,7 @@ func main() {
 		// Windows terminals may omit TERM even though styling is supported.
 		lipgloss.SetColorProfile(termenv.ANSI256)
 	}
-	if err := run(*logFlag, uiOptions{NoIcons: *icons, ReducedMotion: *motion, NoColor: *noColor, EvaluationServer: *evaluationServer, ApprovalPolicy: *approvalPolicy, TimingLog: *timingLog, UserID: *userID}); err != nil {
+	if err := run(*logFlag, uiOptions{NoIcons: *icons, ReducedMotion: *motion, NoColor: *noColor, EvaluationServer: *evaluationServer, ApprovalPolicy: *approvalPolicy, TimingLog: *timingLog}); err != nil {
 		fmt.Fprintln(os.Stderr, "tui:", err)
 		os.Exit(1)
 	}
@@ -48,20 +47,43 @@ func run(logging bool, opts uiOptions) error {
 	if _, err := threadStartParams(".", opts.ApprovalPolicy); err != nil {
 		return err
 	}
-	configDir, err := os.UserConfigDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	inputOptions, closeInput, err := terminalInputOptions()
 	if err != nil {
-		return fmt.Errorf("find user selection directory: %w", err)
+		return err
 	}
+	defer closeInput()
+	programOptions := append([]tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithFPS(30)}, inputOptions...)
+	for {
+		gateCtx, gateCancel := context.WithCancel(ctx)
+		gate := &loginGate{ctx: gateCtx, width: 80, height: 24, checking: true}
+		_, err := tea.NewProgram(gate, programOptions...).Run()
+		gateCancel()
+		if errors.Is(err, tea.ErrInterrupted) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if gate.creds.Token == "" {
+			return nil
+		}
+		again, err := runWorkspace(ctx, logging, opts, gate.creds, programOptions)
+		if err != nil || !again {
+			return err
+		}
+	}
+}
+
+// The agent process and workspace are opened only after server-verified login.
+func runWorkspace(parent context.Context, logging bool, opts uiOptions, creds sessionCredentials, programOptions []tea.ProgramOption) (bool, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return err
+		return false, err
 	}
-	selection, err := loadUserSelection(configDir, cwd, opts.UserID)
-	if err != nil {
-		return err
-	}
-	opts.UserID = selection.UserID
-	ctx, cancel := context.WithCancel(context.Background())
+	opts.UserID = creds.UserID
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	var logger *sessionLogger
 	if logging {
@@ -70,30 +92,27 @@ func run(logging bool, opts uiOptions) error {
 	}
 	client, err := startAppServer(ctx, nil, logger)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer client.Close()
 	m := newModel(client, cwd, opts)
 	m.ctx = ctx
+	m.authEnforced = true
+	m.authCreds = creds
+	m.setAuthIdentity(creds)
 	if opts.TimingLog != "" {
 		file, err := os.OpenFile(opts.TimingLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 		if err != nil {
-			return fmt.Errorf("open timing log: %w", err)
+			return false, fmt.Errorf("open timing log: %w", err)
 		}
 		defer file.Close()
 		m.timingSink = timing.JSONSink(file)
 	}
-	inputOptions, closeInput, err := terminalInputOptions()
-	if err != nil {
-		return err
-	}
-	defer closeInput()
-	programOptions := append([]tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithFPS(30)}, inputOptions...)
 	_, err = tea.NewProgram(m, programOptions...).Run()
 	if errors.Is(err, tea.ErrInterrupted) {
-		return nil
+		return false, nil
 	}
-	return err
+	return m.returnToLogin, err
 }
 
 // The reader only appends to this queue. Slow rendering and open approvals

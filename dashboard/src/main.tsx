@@ -9,6 +9,7 @@ import { AuthProvider } from './auth/AuthProvider';
 import { dashboardTheme } from './config/theme';
 import { loadEmployeePractice, loadOrgPractice } from './data/loadPracticeViews';
 import { AuthControls } from './components/AuthControls';
+import { TerminalSignIn } from './components/TerminalSignIn';
 const root = createRoot(document.getElementById('root')!);
 
 function render(content: React.ReactNode) {
@@ -47,6 +48,7 @@ loadRoute()
     render(
       <>
         <AuthControls />
+        <TerminalSignIn />
         <App route={route} />
       </>,
     ),
