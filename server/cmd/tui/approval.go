@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cortisol-server/internal/timing"
 	"encoding/json"
 	"fmt"
 	"github.com/charmbracelet/bubbles/cursor"
@@ -8,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
+	"time"
 )
 
 func (m *model) requestView() string {
@@ -162,6 +164,10 @@ func (m *model) enqueueRequest(msg wireMessage) tea.Cmd {
 		return nil
 	}
 	m.seenRequests[key] = true
+	if m.decisionStarted == nil {
+		m.decisionStarted = map[string]time.Time{}
+	}
+	m.decisionStarted[key] = time.Now()
 	r := &pendingRequest{message: msg, answers: map[string]any{}, input: textinput.New()}
 	r.input.CharLimit = 0
 	r.input.Focus()
@@ -249,6 +255,11 @@ func (r *pendingRequest) configureQuestion() {
 	}
 }
 func (m *model) reply(msg wireMessage, result any, e *rpcError) tea.Cmd {
+	if started, ok := m.decisionStarted[string(msg.ID)]; ok {
+		timing.Record(m.traceContext(), "codex.user_decision_wait", started, nil, nil)
+		delete(m.decisionStarted, string(msg.ID))
+	}
+
 	return func() tea.Msg {
 		payload := map[string]any{"id": msg.ID}
 		if e != nil {

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"cortisol-server/internal/evaluation"
+	"cortisol-server/internal/timing"
 	"encoding/json"
 	"fmt"
 	"github.com/charmbracelet/bubbles/cursor"
@@ -15,6 +17,8 @@ import (
 type uiOptions struct {
 	NoIcons, ReducedMotion, NoColor bool
 	EvaluationServer                string
+	ApprovalPolicy                  string
+	TimingLog                       string
 }
 type conversationItem struct {
 	key, kind, raw, status, command, output string
@@ -24,8 +28,16 @@ type conversationItem struct {
 	cacheRaw                                string
 	cacheWidth                              int
 	stream                                  strings.Builder
+	withheld                                bool
+	quizOwner                               *quizSession
 }
 type model struct {
+	timingSink      timing.Sink
+	promptTrace     context.Context
+	promptStarted   time.Time
+	codexStarted    time.Time
+	decisionStarted map[string]time.Time
+
 	client                                    *appServer
 	ctx                                       context.Context
 	opts                                      uiOptions
@@ -51,6 +63,9 @@ type model struct {
 	evaluationSequence                        int
 	cancelEvaluation                          context.CancelFunc
 	lastEvaluation                            *promptEvaluation
+	quiz                                      *quizSession
+	quizJump                                  bool
+	evaluationContext                         []evaluation.Message
 }
 type frameMsg time.Time
 type terminalSizeMsg struct{ width, height int }
@@ -92,7 +107,7 @@ func (m *model) Init() tea.Cmd {
 		if err := m.client.Initialize(ctx); err != nil {
 			return readyMsg{err: err}
 		}
-		id, err := m.client.StartThread(ctx, m.workspace)
+		id, err := m.client.StartThread(ctx, m.workspace, m.opts.ApprovalPolicy)
 		if err == nil && m.client.log != nil {
 			err = m.client.log.BindThread(id)
 		}
@@ -101,6 +116,10 @@ func (m *model) Init() tea.Cmd {
 }
 func (m *model) wait() tea.Cmd { return func() tea.Msg { return m.client.events.next(m.ctx) } }
 func (m *model) call(method string, p any) tea.Cmd {
+	if method == "turn/start" {
+		m.codexStarted = time.Now()
+	}
+
 	return func() tea.Msg {
 		if m.client == nil {
 			return callDoneMsg{method: method}
@@ -118,6 +137,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case quizPreparedMsg, quizGeneratedMsg, quizGradedMsg:
+		return m, m.handleQuizMessage(v)
 	case evaluationDoneMsg:
 		return m, m.finishEvaluation(v)
 	case clipboardResult:
@@ -171,6 +192,10 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case disconnectedMsg:
 		m.stopEvaluation()
+		if m.quizActive() && (m.quiz.phase == "running" || m.quiz.phase == "preparing") {
+			m.quizFailure(fmt.Errorf("Codex disconnected before completing the turn"))
+		}
+		m.recordCodexEnd(fmt.Errorf("disconnected"))
 		m.connectionLost = true
 		m.connected = false
 		m.busy = false
@@ -185,7 +210,11 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if v.err != nil {
 			m.status = "Failed: " + v.err.Error()
 			if v.method == "turn/start" {
+				m.recordCodexEnd(v.err)
 				m.busy = false
+				if m.quizActive() {
+					m.quizFailure(fmt.Errorf("Codex could not start the turn"))
+				}
 			}
 		}
 	case wireMessage:
@@ -193,6 +222,12 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.enqueueRequest(v)
 		}
 		m.reduce(v)
+		if v.Method == "turn/completed" && m.quizActive() && m.quiz.phase == "running" && !m.busy {
+			if m.status == "Ready" {
+				return m, m.startQuizGeneration()
+			}
+			m.quizFailure(fmt.Errorf("Codex turn did not complete successfully"))
+		}
 	case tea.WindowSizeMsg:
 		m.selection = textSelection{}
 		m.width = max(1, v.Width)
@@ -329,7 +364,7 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab", "shift+tab":
 			controls := []int{-1, -2} // composer, history, then activity cards
 			for n, i := range m.items {
-				if i.kind == "fileChange" {
+				if !i.withheld && (i.kind == "fileChange" || i.kind == "evaluation") {
 					controls = append(controls, n)
 				}
 			}
@@ -362,6 +397,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case "esc":
+			if m.quizActive() && m.quiz.phase != "running" {
+				return m, nil
+			}
 			if m.evaluating {
 				m.stopEvaluation()
 				m.busy = false
@@ -391,6 +429,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			text := m.draft.Value()
 			if strings.TrimSpace(text) == "/quit" || strings.TrimSpace(text) == "/exit" {
 				return m, tea.Quit
+			}
+			if m.quizActive() {
+				return m, m.quizEnter(strings.TrimSpace(text))
 			}
 			if m.busy || !m.connected || strings.TrimSpace(text) == "" {
 				return m, nil
@@ -453,6 +494,10 @@ func (m *model) item(turn, id, kind string) *conversationItem {
 		return i
 	}
 	i := &conversationItem{key: key, kind: kind}
+	if m.quizActive() && (m.quiz.phase == "running" || m.quiz.turnID == turn) {
+		i.withheld = true
+		i.quizOwner = m.quiz
+	}
 	m.byID[key] = i
 	m.items = append(m.items, i)
 	return i
@@ -499,6 +544,9 @@ func (m *model) reduce(msg wireMessage) {
 	switch msg.Method {
 	case "turn/started":
 		m.turnID = p.Turn.ID
+		if m.quizActive() && m.quiz.phase == "running" {
+			m.quiz.turnID = p.Turn.ID
+		}
 		m.busy = true
 		m.status = "Waiting for response"
 	case "item/agentMessage/delta":
@@ -544,7 +592,15 @@ func (m *model) reduce(msg wireMessage) {
 		if m.turnID != "" && p.Turn.ID != m.turnID {
 			return
 		}
+		var turnErr error
+		if p.Turn.Status != "completed" {
+			turnErr = fmt.Errorf("turn ended without success")
+		}
+		m.recordCodexEnd(turnErr)
 		m.busy = false
+		if m.quizActive() && m.quiz.phase == "running" {
+			m.quiz.turnID = p.Turn.ID
+		}
 		m.status = "Ready"
 		switch p.Turn.Status {
 		case "failed":
@@ -572,4 +628,15 @@ func (m *model) reduce(msg wireMessage) {
 	if !m.follow {
 		m.newOutput = true
 	}
+}
+
+func (m *model) traceContext() context.Context {
+	if m.promptTrace != nil {
+		return m.promptTrace
+	}
+	return m.ctx
+}
+func (m *model) recordCodexEnd(err error) {
+	timing.Record(m.traceContext(), "codex.turn", m.codexStarted, err, nil)
+	m.codexStarted = time.Time{}
 }

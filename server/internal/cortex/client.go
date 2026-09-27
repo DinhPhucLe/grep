@@ -4,12 +4,14 @@ package cortex
 import (
 	"bytes"
 	"context"
+	"cortisol-server/internal/timing"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 var ErrUpstream = errors.New("Cortex request failed")
@@ -55,7 +57,11 @@ func NewClient(config Config) (*Client, error) {
 	return &Client{config: config, http: &http.Client{Timeout: config.Timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
-func (c *Client) Complete(ctx context.Context, system, input string, schema json.RawMessage) (json.RawMessage, error) {
+func (c *Client) Complete(ctx context.Context, system, input string, schema json.RawMessage) (result json.RawMessage, err error) {
+	started := time.Now()
+	defer func() {
+		timing.Record(ctx, "cortex.total", started, err, map[string]int{"input_bytes": len(input), "system_bytes": len(system)})
+	}()
 	payload := struct {
 		Model               string              `json:"model"`
 		Messages            []map[string]string `json:"messages"`
@@ -76,7 +82,9 @@ func (c *Client) Complete(ctx context.Context, system, input string, schema json
 	req.Header.Set("Authorization", "Bearer "+c.config.Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	headersStarted := time.Now()
 	resp, err := c.http.Do(req)
+	timing.Record(ctx, "cortex.response_headers", headersStarted, err, nil)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -91,7 +99,9 @@ func (c *Client) Complete(ctx context.Context, system, input string, schema json
 		return nil, upstreamError(resp.StatusCode, resp.Body)
 	}
 	const maxResponse = 2 << 20
+	bodyStarted := time.Now()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse+1))
+	timing.Record(ctx, "cortex.response_body", bodyStarted, err, map[string]int{"response_bytes": len(data)})
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

@@ -414,16 +414,30 @@ func (c *appServer) Initialize(ctx context.Context) error {
 	return c.notify("initialized", map[string]any{})
 }
 
-func (c *appServer) StartThread(ctx context.Context, cwd string) (string, error) {
+func threadStartParams(cwd, approvalPolicy string) (map[string]any, error) {
+	if approvalPolicy == "" {
+		approvalPolicy = "on-request"
+	}
+	if approvalPolicy != "on-request" && approvalPolicy != "never" {
+		return nil, errors.New("approval-policy must be on-request or never")
+	}
 	abs, err := filepath.Abs(cwd)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"cwd":            abs,
+		"approvalPolicy": approvalPolicy,
+		"sandbox":        "workspace-write",
+	}, nil
+}
+
+func (c *appServer) StartThread(ctx context.Context, cwd, approvalPolicy string) (string, error) {
+	params, err := threadStartParams(cwd, approvalPolicy)
 	if err != nil {
 		return "", err
 	}
-	result, err := c.call(ctx, "thread/start", map[string]any{
-		"cwd":            abs,
-		"approvalPolicy": "untrusted",
-		"sandbox":        "workspace-write",
-	})
+	result, err := c.call(ctx, "thread/start", params)
 	if err != nil {
 		return "", err
 	}

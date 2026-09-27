@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"cortisol-server/internal/cortex"
+	"cortisol-server/internal/timing"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -57,7 +58,10 @@ func (s *Service) Evaluate(ctx context.Context, request Request) (Record, error)
 		return Record{}, cortex.ErrInvalidResponse
 	}
 	record := Record{ID: bson.NewObjectID(), CreatedAt: time.Now().UTC(), Model: s.model, RubricVersion: rubricVersion, Request: request, Evaluation: body}
-	if err := s.repository.Insert(ctx, record); err != nil {
+	insertStarted := time.Now()
+	err = s.repository.Insert(ctx, record)
+	timing.Record(ctx, "mongo.insert", insertStarted, err, nil)
+	if err != nil {
 		if ctx.Err() != nil {
 			return Record{}, ctx.Err()
 		}

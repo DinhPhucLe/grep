@@ -3,7 +3,9 @@ package jobs
 
 import (
 	"context"
+	"cortisol-server/internal/timing"
 	"errors"
+	"time"
 )
 
 var ErrQueueFull = errors.New("job queue is full")
@@ -14,9 +16,10 @@ type outcome[R any] struct {
 	err    error
 }
 type job[T, R any] struct {
-	ctx   context.Context
-	input T
-	reply chan outcome[R]
+	ctx      context.Context
+	input    T
+	reply    chan outcome[R]
+	enqueued time.Time
 }
 type Queue[T, R any] struct {
 	jobs    chan job[T, R]
@@ -47,7 +50,7 @@ func (q *Queue[T, R]) Submit(ctx context.Context, input T) (R, error) {
 	if q.ctx.Err() != nil {
 		return zero, ErrClosed
 	}
-	j := job[T, R]{ctx: ctx, input: input, reply: make(chan outcome[R], 1)}
+	j := job[T, R]{ctx: ctx, input: input, reply: make(chan outcome[R], 1), enqueued: time.Now()}
 	select {
 	case q.jobs <- j:
 	default:
@@ -68,12 +71,15 @@ func (q *Queue[T, R]) worker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case j := <-q.jobs:
+			timing.Record(j.ctx, "queue.wait", j.enqueued, j.ctx.Err(), nil)
 			if j.ctx.Err() != nil {
 				continue
 			}
 			workCtx, cancel := context.WithCancel(j.ctx)
 			stop := context.AfterFunc(ctx, cancel)
+			started := time.Now()
 			result, err := q.process(workCtx, j.input)
+			timing.Record(j.ctx, "queue.work", started, err, nil)
 			stop()
 			cancel()
 			j.reply <- outcome[R]{result, err}

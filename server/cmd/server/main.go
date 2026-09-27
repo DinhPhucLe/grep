@@ -14,6 +14,7 @@ import (
 	"cortisol-server/internal/health"
 	"cortisol-server/internal/jobs"
 	"cortisol-server/internal/quiz"
+	"cortisol-server/internal/timing"
 
 	"github.com/joho/godotenv"
 )
@@ -62,18 +63,19 @@ func run() error {
 
 	// INITIALIZE JOB QUEUE AND HTTP SERVER
 	service := evaluation.NewService(cortexClient, evaluation.NewMongoRepository(database), cortexConfig.Model)
-	queue := jobs.NewQueue(4, 100, service.Evaluate)
-	defer queue.Close()
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", health.Handler)
-	handler := evaluation.NewHandler(queue, cortexConfig.Timeout)
-	mux.HandleFunc("/evaluations", handler)
-	mux.HandleFunc("/jobs", handler)
+	handler := evaluation.NewHandler(service, cortexConfig.Timeout)
+	mux.HandleFunc("/evaluations", timing.HTTP("evaluations", handler))
+	mux.HandleFunc("/jobs", timing.HTTP("jobs", handler))
 	quizService := quiz.NewService(cortexClient, cortexConfig.Model)
-	quizQueue := jobs.NewQueue(4, 100, quizService.Generate)
-	defer quizQueue.Close()
-	mux.HandleFunc("/quizzes", quiz.NewHandler(quizQueue, cortexConfig.Timeout))
+	quizGenerator := quiz.NewGenerator(quizService)
+	defer quizGenerator.Close()
+	mux.HandleFunc("/quizzes", timing.HTTP("quizzes", quiz.NewHandler(quizGenerator, cortexConfig.Timeout)))
+	answerQueue := jobs.NewQueue(4, 100, quizService.Grade)
+	defer answerQueue.Close()
+	mux.HandleFunc("/quiz-answers", timing.HTTP("quiz-answers", quiz.NewAnswerHandler(answerQueue, cortexConfig.Timeout)))
 
 	address := os.Getenv("HTTP_ADDR")
 	if address == "" {

@@ -11,14 +11,13 @@ import (
 	"time"
 
 	"cortisol-server/internal/cortex"
-	"cortisol-server/internal/jobs"
 )
 
-type Submitter interface {
-	Submit(context.Context, Request) (Record, error)
+type Evaluator interface {
+	Evaluate(context.Context, Request) (Record, error)
 }
 
-func NewHandler(queue Submitter, timeout time.Duration) http.HandlerFunc {
+func NewHandler(service Evaluator, timeout time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", "POST")
@@ -48,17 +47,12 @@ func NewHandler(queue Submitter, timeout time.Duration) http.HandlerFunc {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
-		record, err := queue.Submit(ctx, input)
+		record, err := service.Evaluate(ctx, input)
 		switch {
 		case errors.Is(err, context.DeadlineExceeded):
 			writeError(w, 504, "evaluation_timeout", "evaluation timed out")
 		case errors.Is(err, context.Canceled):
 			return
-		case errors.Is(err, jobs.ErrQueueFull):
-			w.Header().Set("Retry-After", "1")
-			writeError(w, 503, "queue_full", "evaluation queue is full")
-		case errors.Is(err, jobs.ErrClosed):
-			writeError(w, 503, "queue_unavailable", "evaluation queue is unavailable")
 		case errors.Is(err, cortex.ErrUpstream):
 			var upstream *cortex.UpstreamError
 			if errors.As(err, &upstream) {

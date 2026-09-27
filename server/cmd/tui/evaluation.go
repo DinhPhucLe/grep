@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cortisol-server/internal/evaluation"
+	"cortisol-server/internal/timing"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -39,10 +40,12 @@ func (m *model) stopEvaluation() {
 
 func (m *model) evaluatePrompt(prompt string) tea.Cmd {
 	m.stopEvaluation()
+	m.promptTrace = timing.New(m.ctx, m.timingSink)
+	m.promptStarted = time.Now()
 	m.lastEvaluation = nil
 	m.evaluating = true
 	sequence := m.evaluationSequence
-	ctx, cancel := context.WithTimeout(m.ctx, 75*time.Second)
+	ctx, cancel := context.WithTimeout(m.traceContext(), 75*time.Second)
 	m.cancelEvaluation = cancel
 	request := evaluation.Request{Input: prompt}
 	// Send recent conversation as context, excluding activity and evaluation cards.
@@ -71,6 +74,7 @@ func (m *model) evaluatePrompt(prompt string) tea.Cmd {
 	for left, right := 0, len(request.Conversation)-1; left < right; left, right = left+1, right-1 {
 		request.Conversation[left], request.Conversation[right] = request.Conversation[right], request.Conversation[left]
 	}
+	m.evaluationContext = append([]evaluation.Message(nil), request.Conversation...)
 	server := m.opts.EvaluationServer
 	if server == "" {
 		server = "http://127.0.0.1:8080"
@@ -82,8 +86,11 @@ func (m *model) evaluatePrompt(prompt string) tea.Cmd {
 	}
 }
 
-func fetchEvaluation(ctx context.Context, server string, input evaluation.Request) (evaluation.Record, error) {
-	var record evaluation.Record
+func fetchEvaluation(ctx context.Context, server string, input evaluation.Request) (record evaluation.Record, err error) {
+	ctx = timing.ForRequest(ctx, "evaluations")
+	started := time.Now()
+	defer func() { timing.Record(ctx, "http.client", started, err, nil) }()
+
 	if err := input.Validate(); err != nil {
 		return record, err
 	}
@@ -100,6 +107,7 @@ func fetchEvaluation(ctx context.Context, server string, input evaluation.Reques
 		return record, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	timing.Headers(ctx, req)
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(req)
 	if err != nil {
@@ -138,8 +146,7 @@ func (m *model) finishEvaluation(result evaluationDoneMsg) tea.Cmd {
 	m.lastEvaluation = &promptEvaluation{Record: result.record, NeedsQuiz: result.record.Evaluation.AmbiguityScore > ambiguityThreshold}
 	branch := "Pass — no quiz"
 	if m.lastEvaluation.NeedsQuiz {
-		// TODO: Generate a question from these gaps and this turn's completed changes.
-		branch = "Quiz required — quiz not implemented yet"
+		branch = "Quiz after implementation — code review will reveal sections as you answer"
 	} else {
 		// TODO: Award clear-prompt points.
 	}
@@ -153,6 +160,8 @@ func (m *model) finishEvaluation(result evaluationDoneMsg) tea.Cmd {
 	m.status = "Waiting for response"
 	m.dirty = true
 	m.refresh()
-	// Both branches currently execute normally; the quiz and points are placeholders.
+	if m.lastEvaluation.NeedsQuiz {
+		return m.prepareQuiz(result.prompt)
+	}
 	return m.call("turn/start", map[string]any{"threadId": m.threadID, "input": []map[string]any{{"type": "text", "text": result.prompt}}})
 }

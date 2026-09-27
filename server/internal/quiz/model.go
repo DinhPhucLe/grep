@@ -114,6 +114,7 @@ func (r Result) Validate(request Request) error {
 		lineCounts[file.Path] = strings.Count(strings.TrimSuffix(file.Content, "\n"), "\n") + 1
 	}
 	seenQuestions, seenTopics := map[string]bool{}, map[string]bool{}
+	var priorEvidence []Evidence
 	for n, question := range r.Questions {
 		text, topic := strings.ToLower(strings.TrimSpace(question.Question)), strings.ToLower(strings.TrimSpace(question.Topic))
 		if question.ID != fmt.Sprintf("q%d", n+1) || text == "" || topic == "" || len(question.Question) > 2000 || len(question.Topic) > 200 || seenQuestions[text] || seenTopics[topic] {
@@ -134,7 +135,13 @@ func (r Result) Validate(request Request) error {
 			if ref.StartLine < 1 || ref.EndLine < ref.StartLine || ref.EndLine > lineCounts[ref.FilePath] {
 				return errors.New("invalid code reference")
 			}
+			for _, prior := range priorEvidence {
+				if ref.FilePath == prior.FilePath && ref.StartLine <= prior.EndLine && prior.StartLine <= ref.EndLine {
+					return errors.New("questions must use independently revealable, non-overlapping code ranges")
+				}
+			}
 		}
+		priorEvidence = append(priorEvidence, question.Evidence...)
 	}
 	return nil
 }

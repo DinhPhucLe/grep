@@ -89,7 +89,11 @@ func (m *model) markdown(i *conversationItem) string {
 func (m *model) refresh() {
 	var b strings.Builder
 	focusLine := 0
+	quizLine := 0
 	for n, i := range m.items {
+		if i.withheld {
+			continue
+		}
 		if i.kind == "commandExecution" {
 			continue
 		}
@@ -97,6 +101,13 @@ func (m *model) refresh() {
 			focusLine = strings.Count(b.String(), "\n")
 		}
 		switch i.kind {
+		case "quizPanel":
+			if m.quiz != nil && i == m.quiz.panel {
+				quizLine = strings.Count(b.String(), "\n")
+			}
+			b.WriteString(ansi.Wrap(safeText(i.raw), max(1, m.width-2), ""))
+		case "quizCode":
+			b.WriteString(ansi.Wrap(safeText(quizFileView(i.quizOwner, i.command)), max(1, m.width-2), ""))
 		case "userMessage":
 			b.WriteString(m.accent(m.role(true), "6") + "\n" + ansi.Wrap(safeText(i.raw), max(1, m.width-2), ""))
 		case "agentMessage":
@@ -144,6 +155,10 @@ func (m *model) refresh() {
 	if m.follow {
 		m.viewport.GotoBottom()
 		m.newOutput = false
+	}
+	if m.quizJump {
+		m.viewport.SetYOffset(quizLine)
+		m.quizJump = false
 	}
 	m.dirty = false
 }

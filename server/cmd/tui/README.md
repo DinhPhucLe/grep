@@ -73,19 +73,72 @@ go run ./tui --view tui/log/some-session.jsonl  # pretty-print a specific log
 
 Requires `codex` on `PATH`. The full-window conversation keeps a fixed composer, streams answers, formats Markdown, and shows expandable file-change summaries. Raw command activity is hidden from the conversation; transport logs still retain it. Enter sends while idle; you can draft during a turn. Alt+Enter inserts a newline. Bracketed multiline pastes remain one prompt.
 
+Codex threads default to `approvalPolicy: on-request` with the `workspace-write`
+sandbox. Routine workspace reads and commands run without the old `untrusted`
+policy's repeated command approvals. Codex can still request approval for
+additional permissions. To suppress execution approval prompts entirely, run
+`go run ./cmd/tui --approval-policy never` from `server/`. Sandbox restrictions
+still apply; commands requiring extra access fail instead of prompting. This
+does not suppress quiz questions or other user-input requests. Restart the TUI
+to start a thread with the new policy; existing threads retain their policy.
+
 Start the Go HTTP server before submitting prompts. The evaluation API defaults
 to `http://127.0.0.1:8080`; override it with
 `go run ./cmd/tui --evaluation-server http://localhost:8080` from `server/`.
+The local evaluation and quiz APIs require no application login or session token.
+Configure the server's Snowflake credentials in `server/.env` for Cortex calls.
 Evaluation includes the original prompt and recent user/assistant conversation
 (up to 50 messages within the API text limit); repository file contents are not
 collected yet. Requests have a 75-second timeout. Failures keep the draft and
 do not start Codex; press Enter to retry. Esc cancels a pending evaluation.
 
+To diagnose slow questions, use `--timing-log /tmp/cortisol-tui-timing.jsonl`.
+It records payload-free stage durations separately from the TUI and correlates
+them with server timing logs. See the [data-flow diagram and latency guide](../../internal/timing/README.md).
+
 The TUI branches on the numeric score: `ambiguity_score > 0.3` marks the prompt
 as requiring a quiz; `<= 0.3` passes. An evaluation card shows the score and
-branch, with the summary available on expansion. Both branches currently send
-the unchanged prompt to Codex and display results normally. Quiz generation,
-code withholding/reveal, and points are placeholders, not implemented behavior.
+branch, with the summary available on expansion. Both branches send the unchanged
+prompt to Codex. Clear prompts display normally. Ambiguous prompts use the
+following review flow:
+
+1. Hold the turn's assistant text and raw file-change cards while Codex runs.
+2. After a successful turn, collect generated text files and call `/quizzes`.
+   The server plans up to six independent code scopes, then generates one question
+   per scope through a shared three-worker queue with six waiting slots.
+3. Once the complete batch arrives, display numbered file snapshots with only
+   unanswered quiz ranges masked. Questions use completion order; no sequential
+   continuation or prefetch requests are needed.
+4. Enter submits the answer to `/quiz-answers`. One wrong answer allows a second
+   attempt. A correct answer or two wrong answers reveals that section; Enter then
+   advances to the next question. Other unanswered sections stay masked.
+5. After the final question, release all original output and return to chat.
+
+Evaluation calls the service directly, without a job queue. The quiz request's
+single timeout covers scope planning and all question jobs. API errors do not
+consume attempts or automatically retry. If generation fails, `/retry` submits a
+new batch and `/reveal` ends the quiz without scoring. `/reveal` can also end an
+active quiz once Codex finishes. It is an explicit user bypass, not a successful
+answer. Restart both server and TUI when updating from the progressive endpoints.
+No new Codex prompt is dispatched while a quiz is active. Drafts composed during
+execution are restored afterward. Points and persistent quiz sessions remain
+unimplemented; answer correctness is a model judgment, not validated comprehension.
+
+This is **TUI presentation gating**, not filesystem isolation. Codex still edits
+files on disk; `--log` still records raw RPC traffic. Approvals and server-input
+requests remain fully available and may contain code needed for informed decisions.
+The quiz displays a snapshot taken after the turn, not a live editor. The model
+selects quiz ranges; the server rejects overlapping ranges across questions but
+cannot guarantee that untested code or question prose never hints at an answer.
+
+Collection combines Codex file-change events with Git before/after text hashes,
+so shell edits in tracked or untracked nonignored files are included without
+counting unchanged preexisting dirty files. Non-Git workspaces rely on file-change
+events; shell-only edits there cannot be reliably captured. Binary/oversized files,
+deletions, and external concurrent edits are not a complete change-review system.
+When no usable generated files exist, the TUI offers retry or explicit reveal.
+Run the TUI from the intended workspace. Reads are restricted to that workspace,
+including symlink resolution.
 
 Scroll the conversation with the mouse wheel or Page Up / Page Down, including while an answer is streaming. Ctrl+Home jumps to the first message and Ctrl+End returns to the latest output from any focus. Scrolling up pauses following; new text displays `New output below`. Scrolling back to the bottom resumes following. Earlier messages stay in the conversation.
 

@@ -82,6 +82,9 @@ func (m *model) footer() string {
 		return m.shortcutStyle("Ctrl+C copy · Esc clear · /quit exit")
 	}
 	text := "Wheel/PgUp/PgDn scroll · Enter send · F1 help"
+	if m.quizActive() {
+		text = "Enter answer/continue · PgUp code review · /reveal end quiz · F1 help"
+	}
 	if m.focus != -1 {
 		text = "↑↓ scroll · End latest · Tab focus · F1 help"
 	}

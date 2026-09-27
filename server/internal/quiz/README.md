@@ -5,11 +5,38 @@ Snowflake Cortex client. It uses the server's `SNOWFLAKE_MODEL` (configure a
 supported Claude model to use Claude), account URL, PAT, and evaluation timeout.
 This is a new route on our Go server; no new Snowflake-side endpoint is needed.
 
-This first version is stateless and is not connected to the TUI. It does not
-save quizzes, grade answers, award points, or hide/apply changes. HTTP 200 means
-generation completed, not that a durable quiz/session was created.
+The TUI calls this endpoint after a successful ambiguous Codex turn, and uses
+`POST /quiz-answers` for grading. The server does not persist quizzes or award
+points. HTTP 200 returns a complete validated quiz.
 
-## Request
+## Concurrent generation
+
+1. One Cortex call plans up to six independent, non-overlapping code scopes.
+2. One question job per scope is submitted to a shared queue with **three workers
+   and six pending slots**. Six scopes produce six question jobs, usually two
+   waves of three calls, in addition to the planning call.
+3. Jobs contain an explicit scope and the full plan; no preceding question text
+   is required. Results are collected in completion order and assigned display
+   IDs `q1` through `q6`, keeping the evidence attached to its question.
+4. The assembled quiz is validated and returned in one JSON response. The TUI
+   shows question 1 after the batch completes. No continuation or prefetch calls
+   are made. `/quizzes/start` and `/quizzes/next` are no longer registered routes;
+   restart both server and TUI when upgrading.
+
+Fewer questions are allowed when the code supports fewer distinct decisions. An
+empty valid plan returns an empty quiz with a reason and makes no question calls.
+The three question workers are shared across requests, not created per quiz.
+Planning runs before the question queue so it cannot deadlock waiting for its own
+child jobs. Overload returns 503; it does not spin or retry. Any failed job cancels
+its siblings. The single request deadline covers planning, queueing, and all
+question calls. Each job sends exactly one terminal result to a buffered channel;
+no successful response schedules additional generation.
+
+The TUI holds output until the complete batch arrives. This trades the previous
+first-question streaming behavior for concurrent generation of the whole quiz.
+Tests verify concurrency and termination, not live latency or model answer quality.
+
+## Batch request
 
 Send `Content-Type: application/json` with:
 
@@ -66,7 +93,7 @@ curl --fail-with-body http://127.0.0.1:8080/quizzes \
 ```json
 {
   "model": "configured-model-name",
-  "prompt_version": "implementation-quiz-v1",
+  "prompt_version": "implementation-quiz-concurrent-v1",
   "questions": [
     {
       "id": "q1",
@@ -86,7 +113,8 @@ Questions are free response. Gap indices are zero-based into the submitted
 evaluation; evidence line ranges are one-based and inclusive in submitted file
 contents. IDs are `q1`, `q2`, etc., local to this response, not persistent IDs.
 The response does not contain an answer key, submitted code, or source excerpts.
-The future TUI should present `question` and retain grounding metadata for review.
+The TUI presents one `question` at a time and uses grounding metadata to focus
+and progressively reveal the referenced code.
 
 Coverage is driven by the system prompt: spread questions across distinct
 consequential gaps and implementation behaviors as evenly as the evidence
@@ -94,11 +122,11 @@ permits, rather than distributing questions across unrelated files. Questions
 must test assumptions or behavior arising from ambiguity, not syntax trivia.
 
 If no grounded questions are possible, HTTP 200 returns `questions: []` and a
-nonempty `no_questions_reason`. The future workflow should handle this explicitly
-rather than forcing a quiz or treating it as a correct answer.
+nonempty `no_questions_reason`. The TUI explicitly ends the quiz and opens code review without treating it as
+a correct answer.
 
 The server validates question count, unique topics/question text, IDs, gap
-indices, file paths, and line bounds. Strict decoding rejects extra fields such
+indices, file paths, line bounds, and non-overlapping evidence across questions. Strict decoding rejects extra fields such
 as answer keys. Those checks do not establish semantic correctness, perfectly
 even coverage, or guarantee that model-written prose cannot hint at an answer.
 The supplied evaluation is validated but is not fetched from MongoDB or
@@ -118,20 +146,36 @@ Errors use `{"error":{"code":"...","message":"..."}}`:
 | 504 | Generation timeout |
 | 500 | Other generation failure |
 
-The route has a separate bounded in-process queue (4 workers, 100 pending),
-respects request cancellation, and uses `EVALUATION_TIMEOUT`. Responses use
+The question queue has three workers and six pending slots. The full batch
+respects request cancellation and uses `EVALUATION_TIMEOUT`. Responses use
 `Cache-Control: no-store`. Submitted code and provider response bodies are not
 logged by this endpoint.
 
-## Later TUI integration
+## Answer grading
 
-After an ambiguous Codex turn completes, the TUI will need to gather the actual
-generated files, retain the evaluation and turn association, and call this
-endpoint. Preventing early disclosure also requires gating assistant text,
-file-change cards, and other code-bearing output. Codex currently writes to disk;
-view gating alone cannot make that code inaccessible. Workspace isolation and
-review/application of changes require a separate implementation. Approval
-requests must remain available throughout the workflow.
+`POST /quiz-answers` accepts JSON with `quiz` (the original `/quizzes` request),
+`questions` (the generated object containing `questions` and `no_questions_reason`),
+`question_id` (for example `q1`), and `answer` (1–8000 bytes of nonblank text).
+It validates the complete quiz and selected question, then asks Cortex whether
+the answer captures the consequential behavior/assumption. Successful responses
+are exactly `{"correct":true}` or `{"correct":false}`. No answer key, hints, code,
+or explanatory feedback is returned, avoiding premature disclosure of other answers.
 
-Answer grading, the two-attempt limit, code reveal, points, and persistence are
-deliberately deferred until the endpoint contract is reviewed.
+The TUI owns the two-attempt limit and progression. Provider failures consume no
+attempts. Grading uses the supplied immutable file snapshot and has its own bounded
+queue with the same timeout. This is stateless: submissions are not authenticated
+against saved quiz IDs and it is not an anti-cheating or durable scoring system.
+
+## TUI visibility
+
+The TUI holds assistant messages and raw change cards from ambiguous turns,
+then shows file snapshots with unanswered evidence ranges masked. Nonquiz code
+remains visible. Correct answers or two failed attempts reveal a section before
+the user advances. Original output is released after completion or explicit
+`/reveal`. Generation errors offer `/retry` and `/reveal`; zero grounded questions
+open review without awarding credit. See the [TUI guide](../../cmd/tui/README.md).
+
+This does not isolate files on disk or redact optional RPC logs. Codex approval
+and input requests remain available. Semantic leakage through model-written
+questions or code outside selected ranges cannot be ruled out by line-bound
+validation. Points and persistence are deferred.

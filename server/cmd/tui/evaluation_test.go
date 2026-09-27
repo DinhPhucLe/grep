@@ -47,6 +47,9 @@ func TestPromptEvaluationBeforeCodex(t *testing.T) {
 			if send == nil || m.lastEvaluation == nil || m.lastEvaluation.NeedsQuiz != (score > 0.3) {
 				t.Fatal("wrong threshold branch")
 			}
+			if score > ambiguityThreshold {
+				_, send = m.Update(send())
+			}
 			if got := send().(callDoneMsg); got.method != "turn/start" {
 				t.Fatal(got)
 			}

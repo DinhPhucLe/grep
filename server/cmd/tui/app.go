@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"cortisol-server/internal/timing"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,6 +20,8 @@ func main() {
 	motion := flag.Bool("reduced-motion", false, "disable animated status and cursor")
 	noColor := flag.Bool("no-color", os.Getenv("NO_COLOR") != "", "disable color and text styling")
 	evaluationServer := flag.String("evaluation-server", "http://127.0.0.1:8080", "Go evaluation API base URL")
+	approvalPolicy := flag.String("approval-policy", "on-request", "Codex execution approvals: on-request or never (workspace sandbox stays enabled)")
+	timingLog := flag.String("timing-log", "", "append payload-free latency events to this JSONL file")
 	flag.Parse()
 	if *viewFlag {
 		if err := viewSessionLog(flag.Arg(0)); err != nil {
@@ -34,13 +37,16 @@ func main() {
 		// Windows terminals may omit TERM even though styling is supported.
 		lipgloss.SetColorProfile(termenv.ANSI256)
 	}
-	if err := run(*logFlag, uiOptions{NoIcons: *icons, ReducedMotion: *motion, NoColor: *noColor, EvaluationServer: *evaluationServer}); err != nil {
+	if err := run(*logFlag, uiOptions{NoIcons: *icons, ReducedMotion: *motion, NoColor: *noColor, EvaluationServer: *evaluationServer, ApprovalPolicy: *approvalPolicy, TimingLog: *timingLog}); err != nil {
 		fmt.Fprintln(os.Stderr, "tui:", err)
 		os.Exit(1)
 	}
 }
 
 func run(logging bool, opts uiOptions) error {
+	if _, err := threadStartParams(".", opts.ApprovalPolicy); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cwd, err := os.Getwd()
@@ -59,6 +65,14 @@ func run(logging bool, opts uiOptions) error {
 	defer client.Close()
 	m := newModel(client, cwd, opts)
 	m.ctx = ctx
+	if opts.TimingLog != "" {
+		file, err := os.OpenFile(opts.TimingLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			return fmt.Errorf("open timing log: %w", err)
+		}
+		defer file.Close()
+		m.timingSink = timing.JSONSink(file)
+	}
 	inputOptions, closeInput, err := terminalInputOptions()
 	if err != nil {
 		return err

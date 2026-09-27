@@ -18,6 +18,12 @@ type Submitter interface {
 }
 
 func NewHandler(queue Submitter, timeout time.Duration) http.HandlerFunc {
+	return newHandler(queue, timeout, Request.Validate)
+}
+
+func newHandler[T, R any](queue interface {
+	Submit(context.Context, T) (R, error)
+}, timeout time.Duration, validate func(T) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodPost {
@@ -31,7 +37,7 @@ func NewHandler(queue Submitter, timeout time.Duration) http.HandlerFunc {
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-		var input Request
+		var input T
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
 		err = decoder.Decode(&input)
@@ -52,7 +58,7 @@ func NewHandler(queue Submitter, timeout time.Duration) http.HandlerFunc {
 			}
 			return
 		}
-		if err := input.Validate(); err != nil {
+		if err := validate(input); err != nil {
 			writeError(w, 400, "invalid_request", err.Error())
 			return
 		}
@@ -61,7 +67,7 @@ func NewHandler(queue Submitter, timeout time.Duration) http.HandlerFunc {
 		response, err := queue.Submit(ctx, input)
 		switch {
 		case errors.Is(err, context.DeadlineExceeded):
-			writeError(w, 504, "quiz_timeout", "question generation timed out")
+			writeError(w, 504, "quiz_timeout", "quiz request timed out")
 		case errors.Is(err, context.Canceled):
 			return
 		case errors.Is(err, jobs.ErrQueueFull):
@@ -70,11 +76,11 @@ func NewHandler(queue Submitter, timeout time.Duration) http.HandlerFunc {
 		case errors.Is(err, jobs.ErrClosed):
 			writeError(w, 503, "queue_unavailable", "quiz queue is unavailable")
 		case errors.Is(err, cortex.ErrUpstream):
-			writeError(w, 502, "cortex_error", "Cortex could not generate questions")
+			writeError(w, 502, "cortex_error", "Cortex could not complete the quiz request")
 		case errors.Is(err, cortex.ErrInvalidResponse):
 			writeError(w, 502, "cortex_invalid_response", "Cortex returned an invalid quiz")
 		case err != nil:
-			writeError(w, 500, "quiz_failed", "question generation could not be completed")
+			writeError(w, 500, "quiz_failed", "quiz request could not be completed")
 		default:
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(response)

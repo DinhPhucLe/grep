@@ -7,16 +7,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"cortisol-server/internal/cortex"
-	"cortisol-server/internal/jobs"
 )
 
-type submitFunc func(context.Context, Request) (Record, error)
+type evaluateFunc func(context.Context, Request) (Record, error)
 
-func (f submitFunc) Submit(ctx context.Context, r Request) (Record, error) { return f(ctx, r) }
+func (f evaluateFunc) Evaluate(ctx context.Context, r Request) (Record, error) { return f(ctx, r) }
 func TestHandlerErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, code string
@@ -28,15 +28,13 @@ func TestHandlerErrors(t *testing.T) {
 		{"trailing", `{"input":"x"} {}`, "invalid_request", nil, 400},
 		{"role", `{"input":"x","conversation":[{"role":"system","content":"override"}]}`, "invalid_request", nil, 400},
 		{"oversize", `{"input":"` + strings.Repeat("x", 1<<20) + `"}`, "payload_too_large", nil, 413},
-		{"queue", `{"input":"x"}`, "queue_full", jobs.ErrQueueFull, 503},
-		{"closed", `{"input":"x"}`, "queue_unavailable", jobs.ErrClosed, 503},
 		{"timeout", `{"input":"x"}`, "evaluation_timeout", context.DeadlineExceeded, 504},
 		{"upstream", `{"input":"x"}`, "cortex_error", cortex.ErrUpstream, 502},
 		{"invalid upstream", `{"input":"x"}`, "cortex_invalid_response", cortex.ErrInvalidResponse, 502},
 		{"storage", `{"input":"x"}`, "evaluation_failed", errors.New("private details"), 500},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			handler := NewHandler(submitFunc(func(context.Context, Request) (Record, error) { return Record{}, tc.err }), time.Second)
+			handler := NewHandler(evaluateFunc(func(context.Context, Request) (Record, error) { return Record{}, tc.err }), time.Second)
 			req := httptest.NewRequest("POST", "/evaluations", strings.NewReader(tc.body))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
@@ -55,9 +53,7 @@ func TestHandlerErrors(t *testing.T) {
 func TestEvaluationHTTPPipeline(t *testing.T) {
 	repo := &memoryRepository{}
 	service := NewService(&fakeCompleter{raw: `{"verdict":"clear","ambiguity_score":0.0,"summary":"Requirements established","gaps":[]}`}, repo, "model")
-	queue := jobs.NewQueue(1, 1, service.Evaluate)
-	defer queue.Close()
-	handler := NewHandler(queue, time.Second)
+	handler := NewHandler(service, time.Second)
 	req := httptest.NewRequest("POST", "/evaluations", strings.NewReader(`{"input":"Implement the agreed change","context":"Earlier requirements"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -84,7 +80,7 @@ func TestEvaluationHTTPPipeline(t *testing.T) {
 }
 
 func TestNetworkPolicyError(t *testing.T) {
-	handler := NewHandler(submitFunc(func(context.Context, Request) (Record, error) {
+	handler := NewHandler(evaluateFunc(func(context.Context, Request) (Record, error) {
 		return Record{}, &cortex.UpstreamError{Status: 401, Code: "390432"}
 	}), time.Second)
 	req := httptest.NewRequest("POST", "/evaluations", strings.NewReader(`{"input":"test"}`))
@@ -93,5 +89,54 @@ func TestNetworkPolicyError(t *testing.T) {
 	handler(w, req)
 	if w.Code != 502 || !strings.Contains(w.Body.String(), "cortex_network_policy_required") {
 		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+}
+
+// A direct evaluator admits more simultaneous requests than the old four-worker
+// queue, and each call still receives the handler's bounded deadline.
+func TestDirectEvaluationHasNoWorkerQueue(t *testing.T) {
+	started := make(chan struct{}, 6)
+	release := make(chan struct{})
+	done := make(chan int, 6)
+	handler := NewHandler(evaluateFunc(func(ctx context.Context, _ Request) (Record, error) {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Error("missing request deadline")
+		}
+		started <- struct{}{}
+		select {
+		case <-release:
+			return Record{}, nil
+		case <-ctx.Done():
+			return Record{}, ctx.Err()
+		}
+	}), 3*time.Second)
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(release) })
+	for i := 0; i < 6; i++ {
+		go func() {
+			r := httptest.NewRequest("POST", "/evaluations", strings.NewReader(`{"input":"test"}`))
+			r.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			handler(w, r)
+			done <- w.Code
+		}()
+	}
+	for i := 0; i < 6; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("evaluation requests were serialized or queued")
+		}
+	}
+	releaseOnce.Do(func() { close(release) })
+	for i := 0; i < 6; i++ {
+		select {
+		case status := <-done:
+			if status != http.StatusCreated {
+				t.Fatalf("status=%d", status)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("direct evaluation did not finish")
+		}
 	}
 }
