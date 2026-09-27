@@ -49,8 +49,12 @@ func SchemaIntegrityError(version uint, missing []string) error {
 	if len(missing) == 0 {
 		return nil
 	}
+	prev := int(version) - 1
+	if prev < 0 {
+		prev = 0
+	}
 	return fmt.Errorf(
-		"migration version %d is recorded but missing collections [%s]; reconcile deployed validators, indexes, and migration history before choosing a repair; do not automatically force or reset the migration ledger",
-		version, strings.Join(missing, ", "),
+		"migration version %d is recorded but missing collections [%s]; force schema_migrations.version to %d with dirty=false, then re-run migrate",
+		version, strings.Join(missing, ", "), prev,
 	)
 }

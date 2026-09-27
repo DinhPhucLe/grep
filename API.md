@@ -357,39 +357,12 @@ go run ./cmd/server
 If golang-migrate marks `dirty`, or version N is recorded but collections are
 missing:
 
-1. Inspect `schema_migrations.version` and `dirty`, deployed validators, indexes,
-   and collections read-only. Export or back up affected data before repair.
-2. Reconcile the actual schema with migration history and review an explicit
-   repair sequence. Do not automatically force/reset the ledger, move it back
-   to N-1, or drop partially created collections.
-3. Apply only the reviewed repair, verify schema integrity, then consider seeding.
-
-### Fresh baseline and existing deployments
-
-The canonical fresh-database baseline ends at version **6**: practice schema
-remains at `000005_practice_schema`, and ambiguity-score validation is at
-`000006_evaluation_ambiguity_score`. Version **7** is reserved for the planned
-conversation model; it is not implemented yet. The seed minimum remains 5
-because its practice collections were introduced there; version 6 adds no
-collections.
-
-The previous tree contained two different migration pairs numbered 5. Renaming
-one fixes fresh migration discovery, but does not establish a safe upgrade for
-an existing deployment. A recorded version 5 could represent practice schema,
-ambiguity-score validation, or an incomplete application. Inspect both sets
-of schema objects and the ledger before selecting any repair.
-Existing-deployment rollout is **unresolved**: no live migration state or
-validators were inspected for this change. No migrations have been applied.
-A verified clean database at versions 1-4 may apply the remaining baseline
-migrations only after deployment review; an empty disposable database can use
-the canonical sequence 1-6. Never automatically force/reset the ledger.
-
-Offline verification (from `server/`, does not connect to MongoDB):
-
-```bash
-go test ./internal/db ./internal/db/seed -count=1
-go run ./cmd/migrate -check
-```
+1. Inspect Atlas / local DB: which collections exist, what `schema_migrations`
+   says.
+2. Force `schema_migrations.version` back to **N−1** with `dirty: false`
+   (only after understanding partial applies — may need to drop half-created
+   collections manually).
+3. Re-run `go run ./cmd/migrate`, then `go run ./cmd/seed` if needed.
 
 Do not invent alternate migrate CLIs; this repo’s entrypoint is
 `go run ./cmd/migrate`.
