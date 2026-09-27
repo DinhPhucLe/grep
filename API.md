@@ -124,6 +124,40 @@ Aggregates `practice_events` for that user + practice + calendar year.
 | `metrics` | array | Same metric shape as employee view |
 | `summary` | object? | `{ status, bullets }` |
 
+### Employee knowledge view
+
+`GET /api/v1/dashboard/people/{userId}/knowledge`
+
+| Query | Type | Default | Notes |
+|-------|------|---------|--------|
+| `year` | int | current UTC year | Must be in `1970…3000` if set. |
+
+Aggregates `knowledge_connects` where the user is seeker (in) or author (out).
+Calendar `count` = in + out that day (equal weight).
+
+**200** — `EmployeeKnowledgeView` (`schemaVersion`: `"employee_knowledge.v1"`)
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `activityCalendar` | object | Same shape as practice calendar |
+| `metrics` | array | `edges_out`, `edges_in`, `in_out_ratio`, `avg_edges_per_session` |
+
+### Organization knowledge view
+
+`GET /api/v1/dashboard/organizations/{orgId}/knowledge`
+
+| Query | Type | Default | Notes |
+|-------|------|---------|--------|
+| `from` / `to` | RFC3339 | year-to-date | Connect `created_at` window |
+
+**200** — `OrgKnowledgeView` (`schemaVersion`: `"org_knowledge.v1"`)
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `topicNetwork` | object | `{ status, nodes: [{ id, label, weight }], links: [{ source, target, weight }] }` |
+| `learningDots` | object | `{ status, items: [{ id, topics, authorUserId, authorName?, createdAt }] }` — one item per connected document |
+| `metrics` | array | total connects, unique seekers/teachers, docs connected, median edges/session |
+
 ### Frontend routes (not HTTP API)
 
 | Path | Loads |
@@ -217,6 +251,27 @@ If a GET query includes `organizationId` and it does not match the session org �
 **400** — `invalid_request`.  
 **401** — unauthorized.
 
+### Connect (learning edge)
+
+`POST /api/v1/knowledge/connects`  
+`Content-Type: application/json`
+
+Persists directed learning edges when a seeker **Connects** a knowledge hit in the TUI
+(`seeker → each document author`, self-loops skipped). Idempotent per
+`(seeker, document, author, sessionId)`.
+
+| Field | Type | Required |
+|-------|------|----------|
+| `documentId` | string | yes |
+| `sessionId` | string | yes — Codex thread id |
+
+**201** — `{ "inserted": N, "edges": [ /* Connect */ ] }` when new rows written.  
+**200** — same shape when all edges already existed.  
+**400** — missing fields / no other authors.  
+**403** — document outside session org.  
+**404** — document not found.  
+**401** — unauthorized.
+
 ### Live events (SSE)
 
 `GET /api/v1/knowledge/events`  
@@ -269,6 +324,7 @@ Current application collections by migration version:
 | 11 | `knowledge_records` |
 | 12 | `knowledge_documents` |
 | 13 | `auth_sessions`; `users` gains optional `github_id` / `github_login` / `avatar_url` |
+| 14 | `knowledge_connects` (learning edges from TUI Connect) |
 
 Note: `organizations` / `organization_members` / `practice_events` are required from
 application version ≥ 6 (see schema integrity); they may predate the current file set.
@@ -497,6 +553,26 @@ go run ./cmd/server
 5. `go run ./cmd/seed` (optional for demo)
 6. `go run ./cmd/server` + dashboard `npm run dev`
 
+### Empty dashboard?
+
+If landing search or practice pages look empty:
+
+1. From `server/`, run `go run ./cmd/migrate` then `go run ./cmd/seed`. No extra
+   update scripts — seed soft-fills missing demo docs only (`$setOnInsert`).
+2. Seed **never overwrites** existing `_id`s. Older docs (e.g. `demo-org` /
+   `user1`) can sit alongside NovaPay / AtlasHealth.
+3. Empty people/org search ranks accounts with **learning edges / practice
+   events** first (not newest `created_at`). Legacy `userN` and GitHub login
+   accounts often have quizzes but **zero** edges — open **Alex Rivera**,
+   **Jordan Kim**, **Sam Okonkwo**, or search those names.
+4. Spot-check:
+   - `GET /api/v1/dashboard/people/recommendations` (should list active learners)
+   - `GET /api/v1/dashboard/people/recommendations?q=Alex`
+   - the employee/org practice URLs printed at the end of `go run ./cmd/seed`
+
+If migrate fails with “version N recorded but missing collections”, use the
+repair steps below, then seed again.
+
 ### Adding a new migration
 
 1. Create `00000N_description.up.json` and matching `.down.json` (JSON array of
@@ -534,6 +610,6 @@ Do not invent alternate migrate CLIs; this repo’s entrypoint is
 | Directory search (recs) | `server/internal/practice/directory.go` |
 | Migrations | `server/internal/db/migrations/` |
 | Seed data | `server/internal/db/seed/` |
-| Dashboard TS contracts | `dashboard/src/contracts/practice.ts`, `search.ts` |
+| Dashboard TS contracts | `dashboard/src/contracts/practice.ts`, `knowledge.ts`, `search.ts` |
 
 When code and this file disagree, **update this file** to match the code.

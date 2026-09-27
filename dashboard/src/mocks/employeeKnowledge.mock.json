@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "employee_knowledge.v1",
+  "generatedAt": "2026-09-27T12:00:00Z",
+  "subject": {
+    "userId": "660100000000000001010000",
+    "userName": "Alex Rivera",
+    "organizationId": "660100000000000004000000",
+    "year": 2026
+  },
+  "activityCalendar": {
+    "status": "available",
+    "days": [
+      { "date": "2026-01-08", "count": 2, "intensity": 2 },
+      { "date": "2026-01-15", "count": 1, "intensity": 1 },
+      { "date": "2026-02-03", "count": 4, "intensity": 4 },
+      { "date": "2026-03-12", "count": 3, "intensity": 3 },
+      { "date": "2026-04-02", "count": 1, "intensity": 1 },
+      { "date": "2026-05-20", "count": 2, "intensity": 2 },
+      { "date": "2026-06-11", "count": 5, "intensity": 4 },
+      { "date": "2026-07-01", "count": 1, "intensity": 1 },
+      { "date": "2026-08-18", "count": 2, "intensity": 2 },
+      { "date": "2026-09-05", "count": 3, "intensity": 3 }
+    ]
+  },
+  "metrics": [
+    {
+      "id": "edges_out",
+      "category": "significant",
+      "label": "Edges sent",
+      "status": "available",
+      "display": { "primary": "12" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "edges_in",
+      "category": "significant",
+      "label": "Edges received",
+      "status": "available",
+      "display": { "primary": "8" },
+      "visualization": { "type": "stat" }
+    },
+    {
+      "id": "in_out_ratio",
+      "category": "significant",
+      "label": "In / out mix",
+      "status": "available",
+      "display": { "primary": "40%" },
+      "visualization": {
+        "type": "ratio",
+        "value": 0.4,
+        "minimum": 0,
+        "maximum": 1,
+        "segments": [
+          { "label": "In", "value": 8 },
+          { "label": "Out", "value": 12 }
+        ]
+      }
+    },
+    {
+      "id": "avg_edges_per_session",
+      "category": "descriptive",
+      "label": "Avg edges / session",
+      "status": "available",
+      "display": { "primary": "2.5" },
+      "visualization": { "type": "stat" }
+    }
+  ],
+  "summary": {
+    "status": "available",
+    "bullets": ["20 learning edges in 2026 (8 in, 12 out)"]
+  }
+}

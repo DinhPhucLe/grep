@@ -62,6 +62,9 @@ not as the primary customer-facing story.
   from the CLI.
 - Session / heatmap views plus **employee and organization practice** pages
   (calendar, outcomes, codebase treemaps, outcomes-over-time charts).
+- **Learning edges:** employee calendar toggle Quizzes | Edges; org Knowledge
+  mode with topic co-occurrence network (`d3-force` + visx) and connected
+  documents as a neo-brutalist table (topics, author, date).
 - Practice viz polish: readable dates, truncated IDs, named subjects, dynamic
   intensity tiers, denser mocks.
 
@@ -89,6 +92,7 @@ Without write + read, Slack, autocomplete, and graphs are empty.
 | **Medium** | HTTP MCP server with real tool schemas (`quack`, `knowledge_search`, `knowledge_post`) + mock knowledge backends; Docker packaging for Go API + MCP; Slack via official Slack MCP (docs/config only) | **Done** — see [`mcp/`](mcp/) and root [`docker-compose.yml`](docker-compose.yml) |
 | **Small** | Fixture knowledge corpus for demos | **Done** — [`mcp/fixtures/`](mcp/fixtures/) |
 | **Next (other / follow-on)** | Go `GET/POST /api/v1/knowledge` with Atlas vector search; flip MCP from mock → HTTP client; TUI knowledge hit picker | **Done** — see `server/internal/orgknowledge`, `mcp/src/http`, `server/cmd/tui/knowledge_picker.go` |
+| **Small** | Persist TUI Connect as learning edges; employee/org knowledge dashboard aggregates + viz | **Done** — `POST /api/v1/knowledge/connects`, dashboard `/knowledge` GETs, calendar toggle + topic network / connected-docs table |
 
 **Deferred:** Slack Events bot, full code-embedding index as a second system,
 cross-org autocomplete with name chips, 3D knowledge maps.

@@ -34,6 +34,9 @@ func RequiredCollectionsForVersion(version uint) []string {
 	if version >= 13 {
 		required = append(required, "auth_sessions")
 	}
+	if version >= 14 {
+		required = append(required, "knowledge_connects")
+	}
 	return required
 }
 

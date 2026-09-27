@@ -14,6 +14,8 @@ const (
 	kindSession byte = 3
 	kindOrg     byte = 4
 	kindMember  byte = 5
+	kindKnowledgeDoc byte = 7
+	kindKnowledgeConnect byte = 8
 
 	orgNovaPay     byte = 1
 	orgAtlasHealth byte = 2
@@ -186,6 +188,118 @@ func buildOrgRecords(org orgSpec, base time.Time) []seedRecord {
 		records = append(records, practiceEventsForUser(
 			org, orgID, local, userIDs[local], projectIDs, sessionIDs, repoToProject,
 		)...)
+	}
+	if org.orgByte == orgNovaPay || org.orgByte == orgAtlasHealth {
+		records = append(records, knowledgeRecordsForOrg(org, orgID, userIDs, created)...)
+	}
+	return records
+}
+
+func knowledgeRecordsForOrg(org orgSpec, orgID bson.ObjectID, userIDs []bson.ObjectID, base time.Time) []seedRecord {
+	// Featured trio per org: locals 1, 2, 3 — every demo-cast employee must have in+out degrees.
+	a := userIDs[1]
+	b := userIDs[2]
+	c := userIDs[3]
+	nameByID := map[string]string{
+		a.Hex(): org.names[0],
+		b.Hex(): org.names[1],
+		c.Hex(): org.names[2],
+	}
+
+	type card struct {
+		seq     byte
+		author  bson.ObjectID
+		topics  []string
+		content string
+	}
+	var cards []card
+	var repo string
+	if org.orgByte == orgNovaPay {
+		repo = "payments-api"
+		cards = []card{
+			{1, b, []string{"payments", "retries"}, "Prefer exponential backoff with jitter on payment gateway 429s."},
+			{2, a, []string{"payments", "ledger"}, "Ledger postings must be idempotent on (org, invoice_id)."},
+			{3, b, []string{"auth", "webhooks"}, "Webhook signatures verify against the rotating signing secret."},
+			{4, a, []string{"retries", "observability"}, "Emit retry_attempt metric before the sleep, not after."},
+			{5, c, []string{"ledger", "payments"}, "Never mutate posted ledger rows; create reversing entries."},
+			{6, b, []string{"webhooks", "payments"}, "Replay webhooks through the dead-letter topic, not the live consumer."},
+			{7, c, []string{"auth", "retries"}, "Cache JWKS for at most five minutes; force refresh on kid miss."},
+			{8, a, []string{"observability", "webhooks"}, "Trace webhook delivery with the same request id as the producer."},
+		}
+	} else {
+		repo = "atlas-core"
+		// Same author pattern as NovaPay (b,a,b,a,c,b,c,a) so one edge table works for both orgs.
+		cards = []card{
+			{1, b, []string{"claims", "eligibility"}, "Eligibility checks must short-circuit on terminated members."},
+			{2, a, []string{"claims", "billing"}, "Claim adjustments require a dual-control approval on amounts over 500."},
+			{3, b, []string{"billing", "payouts"}, "Payout batches are idempotent on (org, batch_id)."},
+			{4, a, []string{"portal", "claims"}, "Portal claim lists page by updated_at, never by insertion order."},
+			{5, c, []string{"eligibility", "api"}, "Legacy eligibility SOAP faults map to typed domain errors."},
+			{6, b, []string{"billing", "claims"}, "Do not reopen closed claim years from the portal write path."},
+			{7, c, []string{"payouts", "billing"}, "Payout retries use the same ledger hold until settlement clears."},
+			{8, a, []string{"portal", "api"}, "Portal BFF caches member cards for 30s keyed by member_id."},
+		}
+	}
+
+	var records []seedRecord
+	docIDs := make([]bson.ObjectID, len(cards))
+	for i, card := range cards {
+		docID := seedID(kindKnowledgeDoc, org.orgByte, card.seq, 0, 0)
+		docIDs[i] = docID
+		created := base.AddDate(0, i, 0).Add(3 * time.Hour)
+		records = append(records, seedRecord{"knowledge_documents", bson.M{
+			"_id":             docID,
+			"content":         card.content,
+			"topics":          card.topics,
+			"properties":      bson.M{"repo": repo, "language": "go"},
+			"authors":         []bson.M{{"user_id": card.author.Hex(), "name": nameByID[card.author.Hex()]}},
+			"created_at":      created,
+			"updated_at":      created,
+			"organization_id": orgID.Hex(),
+		}})
+	}
+
+	// Directed learning edges: seeker != author for every row (no silent skips).
+	// Locals 1/2/3 are the demo-cast trio and must all appear as seeker and author.
+	type edge struct {
+		seq     byte
+		seeker  bson.ObjectID
+		docIdx  int
+		day     int
+		session string
+	}
+	edges := []edge{
+		{1, a, 0, 20, "thread-demo-1"},   // 1←2
+		{2, a, 2, 35, "thread-demo-1"},   // 1←2
+		{3, a, 4, 50, "thread-demo-2"},   // 1←3
+		{4, a, 6, 65, "thread-demo-2"},   // 1←3
+		{5, b, 1, 30, "thread-demo-3"},   // 2←1
+		{6, b, 3, 55, "thread-demo-3"},   // 2←1
+		{7, b, 4, 80, "thread-demo-4"},   // 2←3
+		{8, b, 6, 95, "thread-demo-4"},   // 2←3
+		{9, c, 0, 40, "thread-demo-5"},   // 3←2
+		{10, c, 1, 70, "thread-demo-5"},  // 3←1
+		{11, c, 2, 100, "thread-demo-6"}, // 3←2
+		{12, c, 3, 120, "thread-demo-6"}, // 3←1
+		{13, a, 5, 140, "thread-demo-7"}, // 1←2
+		{14, b, 7, 160, "thread-demo-8"}, // 2←1
+	}
+	for _, e := range edges {
+		card := cards[e.docIdx]
+		if e.seeker.Hex() == card.author.Hex() {
+			panic("seed knowledge edge must not be self-referential")
+		}
+		created := base.AddDate(0, 0, e.day).Add(11 * time.Hour)
+		records = append(records, seedRecord{"knowledge_connects", bson.M{
+			"_id":             seedID(kindKnowledgeConnect, org.orgByte, e.seq, 0, 0),
+			"organization_id": orgID.Hex(),
+			"seeker_user_id":  e.seeker.Hex(),
+			"author_user_id":  card.author.Hex(),
+			"document_id":     docIDs[e.docIdx].Hex(),
+			"session_id":      e.session,
+			"topics":          card.topics,
+			"created_at":      created,
+		}})
 	}
 	return records
 }
