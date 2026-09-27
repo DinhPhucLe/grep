@@ -86,6 +86,10 @@ type model struct {
 	knowledgeExpanded                         bool
 	knowledgePreviewIdx                       int
 	knowledgePreviewOffset                    int
+	auth                                      *authIdentity
+	authDeviceCode                            string
+	sseCancel                                 context.CancelFunc
+	knowledgeLiveCh                           <-chan knowledgeLiveMsg
 }
 type frameMsg time.Time
 type terminalSizeMsg struct{ width, height int }
@@ -123,9 +127,9 @@ func tick() tea.Cmd {
 }
 func (m *model) Init() tea.Cmd {
 	if m.client == nil {
-		return tick()
+		return tea.Batch(tick(), m.loadAuthOnStart())
 	}
-	return tea.Batch(tick(), m.wait(), func() tea.Msg {
+	return tea.Batch(tick(), m.loadAuthOnStart(), m.wait(), func() tea.Msg {
 		ctx, cancel := context.WithTimeout(m.ctx, 30*time.Second)
 		defer cancel()
 		if err := m.client.Initialize(ctx); err != nil {
@@ -160,6 +164,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cmd, handled := m.handleAuthMsg(msg); handled {
+		return m, cmd
+	}
 	switch v := msg.(type) {
 	case quizPreparedMsg, quizGeneratedMsg, quizAnswerSavedMsg, quizAnswerGradedMsg:
 		return m, m.handleQuizMessage(v)
@@ -496,13 +503,23 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			text := m.draft.Value()
-			if strings.TrimSpace(text) == "/quit" || strings.TrimSpace(text) == "/exit" {
+			trimmed := strings.TrimSpace(text)
+			switch trimmed {
+			case "/quit", "/exit":
 				return m, tea.Quit
+			case "/login":
+				m.draft.Reset()
+				m.resize()
+				return m, m.beginLogin()
+			case "/logout":
+				m.draft.Reset()
+				m.resize()
+				return m, m.beginLogout()
 			}
 			if m.quizActive() {
-				return m, m.quizEnter(strings.TrimSpace(text))
+				return m, m.quizEnter(trimmed)
 			}
-			if m.busy || !m.connected || strings.TrimSpace(text) == "" {
+			if m.busy || !m.connected || trimmed == "" {
 				return m, nil
 			}
 			m.busy = true

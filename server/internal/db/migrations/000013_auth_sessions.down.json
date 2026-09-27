@@ -1,0 +1,39 @@
+[
+  {
+    "drop": "auth_sessions"
+  },
+  {
+    "dropIndexes": "users",
+    "index": "users_by_github_id"
+  },
+  {
+    "collMod": "users",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["_id", "name", "mail", "created_at"],
+        "additionalProperties": false,
+        "properties": {
+          "_id": {
+            "bsonType": "objectId",
+            "description": "USER ID: MongoDB ObjectId."
+          },
+          "name": {
+            "bsonType": "string",
+            "description": "USER NAME: Required string."
+          },
+          "mail": {
+            "bsonType": "string",
+            "description": "USER MAIL: Required string."
+          },
+          "created_at": {
+            "bsonType": "date",
+            "description": "CREATED AT: Required BSON date supplied by the application."
+          }
+        }
+      }
+    },
+    "validationLevel": "strict",
+    "validationAction": "error"
+  }
+]

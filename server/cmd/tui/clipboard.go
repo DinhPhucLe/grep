@@ -208,10 +208,21 @@ func (m *model) quitKey(k tea.KeyMsg) (bool, tea.Cmd) {
 			m.quitDraft = string(r[:len(r)-1])
 		}
 	case "enter":
-		if strings.TrimSpace(m.quitDraft) == "/quit" || strings.TrimSpace(m.quitDraft) == "/exit" {
+		cmd := strings.TrimSpace(m.quitDraft)
+		switch cmd {
+		case "/quit", "/exit":
 			return true, tea.Quit
+		case "/login":
+			m.quitMode = false
+			m.quitDraft = ""
+			return true, m.beginLogin()
+		case "/logout":
+			m.quitMode = false
+			m.quitDraft = ""
+			return true, m.beginLogout()
+		default:
+			m.clipboardNotice = "Commands: /login · /logout · /quit"
 		}
-		m.clipboardNotice = "Use /quit to exit or Esc to cancel"
 	default:
 		if k.Type == tea.KeyRunes && !k.Paste {
 			m.quitDraft += string(k.Runes)

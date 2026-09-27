@@ -58,6 +58,15 @@ Save the file.
 That is the whole Codex config for Cortisol MCP. Not YAML. Not `mcpServers`.
 This exact TOML table.
 
+For **HTTP knowledge backend** (`MCP_BACKEND=http`), the MCP process needs a
+session token from TUI `/login` (stored in `~/.cortisol/credentials`):
+
+```bash
+export CORTISOL_SESSION_TOKEN="$(jq -r .token ~/.cortisol/credentials)"
+export CORTISOL_API_BASE="http://127.0.0.1:8080"
+export MCP_BACKEND=http
+```
+
 Optional Slack (only if you want it too) — paste under the block above:
 
 ```toml

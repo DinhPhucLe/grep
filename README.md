@@ -48,11 +48,72 @@ This validates and applies pending migrations to the configured database. To
 validate migration files without connecting to MongoDB, run
 `go run ./cmd/migrate -check`.
 
-### 3. Run the HTTP API
+After migrate, seed once so the default demo org exists (GitHub logins auto-join
+it):
+
+```bash
+go run ./cmd/seed
+```
+
+### 3. Configure GitHub OAuth (team login)
+
+Login uses **GitHub device flow** (same for the dashboard **Sign in** button and
+TUI `/login`). Knowledge search/post require a session from this flow.
+
+#### Create the OAuth App (one shared app for the team is fine)
+
+1. Open [GitHub → Settings → Developer settings → OAuth Apps → New OAuth App](https://github.com/settings/developers)
+2. Fill in:
+   - **Application name:** e.g. `Cortisol local`
+   - **Homepage URL:** `http://127.0.0.1:8080`
+   - **Authorization callback URL:** `http://127.0.0.1:8080`  
+     (required by the form; device flow does **not** redirect here)
+3. Create the app, then open it and **enable Device Flow**. Save.
+4. Copy the **Client ID**. If GitHub shows a **Client secret**, copy that too.
+
+If Device Flow is off, Sign in fails with `device_flow_disabled`.
+
+#### Put credentials in `server/.env`
+
+```dotenv
+GITHUB_CLIENT_ID=<oauth-app-client-id>
+# Optional — only if your OAuth App has a client secret
+# GITHUB_CLIENT_SECRET=<oauth-app-client-secret>
+
+# Optional overrides
+# CORTISOL_DEFAULT_ORG_ID=<hex ObjectId of the org everyone joins>
+# AUTH_SESSION_TTL=720h
+```
+
+`GITHUB_CLIENT_ID` is required to start the HTTP API. New GitHub users are
+upserted and **auto-joined** into the default org (seeded NovaPay unless
+`CORTISOL_DEFAULT_ORG_ID` is set). Org invitations are not implemented yet.
+
+#### How each person logs in
+
+1. Start the API (`go run ./cmd/server` from `server/`).
+2. **Dashboard:** `cd dashboard && npm install && npm run dev` → top-right
+   **Sign in** → open the GitHub link → enter the code → avatar appears.
+   Click the avatar → **Log out**.
+3. **TUI:** with `CORTISOL_SERVER_URL=http://127.0.0.1:8080`, run
+   `go run ./cmd/tui`, then type `/login` (or `/logout`).
+4. **MCP HTTP backend:** after login, pass the session token:
+
+```bash
+export CORTISOL_SESSION_TOKEN="$(jq -r .token ~/.cortisol/credentials)"
+export CORTISOL_API_BASE="http://127.0.0.1:8080"
+export MCP_BACKEND=http
+```
+
+Dashboard sessions are stored in the browser (`localStorage`). TUI sessions are
+in `~/.cortisol/credentials` (mode `0600`).
+
+### 4. Run the HTTP API
 
 Before starting, add the Snowflake account URL, PAT, and model to `server/.env`
 using the [Cortex setup guide](server/internal/evaluation/docs/snowflake.md). The server requires
-these settings to evaluate prompts.
+these settings to evaluate prompts. GitHub OAuth env from step 3 is also
+required.
 
 In a terminal from the `server/` directory:
 
@@ -62,7 +123,7 @@ go run ./cmd/server
 
 Default listen address: `127.0.0.1:8080` (`HTTP_ADDR`).
 
-### 4. Run the MCP server (agent tools)
+### 5. Run the MCP server (agent tools)
 
 In another terminal:
 
@@ -76,7 +137,8 @@ npm run dev
 - MCP endpoint: `http://127.0.0.1:3100/mcp`
 
 Tools (`knowledge_search`, `knowledge_post`) use **mock** knowledge
-backends today. For Codex, open `~/.codex/config.toml` and paste
+backends by default. Set `MCP_BACKEND=http` and `CORTISOL_SESSION_TOKEN` (see
+step 3) to hit the live knowledge API. For Codex, open `~/.codex/config.toml` and paste
 
 ```
 [mcp_servers.cortisol]
@@ -86,7 +148,7 @@ tool_timeout_sec = 60
 enabled = true
 ```
 
-### 5. Docker (API + MCP only)
+### 6. Docker (API + MCP only)
 
 With Docker running and `server/.env` filled:
 
@@ -109,9 +171,10 @@ curl http://localhost:3100/health
 ```
 
 To load the linked development/demo records, run `go run ./cmd/seed` from
-`server/` after applying migrations. Seeding is optional.
+`server/` after applying migrations. Seeding is optional for demo data volume;
+step 2 already mentions a minimal seed for the default login org.
 
-### 6. Run the TUI
+### 7. Run the TUI
 
 Connect Codex to our MCP first — open `~/.codex/config.toml` and paste:
 
@@ -127,10 +190,12 @@ Start MCP (`cd mcp && npm run dev`), then:
 
 ```bash
 cd server
+export CORTISOL_SERVER_URL=http://127.0.0.1:8080
 go run ./cmd/tui
 ```
 
-Full steps: [`docs/codex-mcp.md`](docs/codex-mcp.md). The TUI does not load MCP
+Use `/login` for GitHub device login (see step 3). Full MCP steps:
+[`docs/codex-mcp.md`](docs/codex-mcp.md). The TUI does not load MCP
 itself — `codex app-server` reads that file.
 
 The TUI starts `codex app-server` and uses its JSON-RPC stdio interface. Make
@@ -166,11 +231,8 @@ The integration test never loads `server/.env`. It creates a uniquely suffixed
 database under the specified `cortisol_test_` prefix and drops only that database
 afterwards. Its vectors are synthetic storage fixtures.
 
-`go test ./...` and `go run ./cmd/migrate -check` currently report the existing
-duplicate version-5 migration error. The earlier repair was reverted on request;
-the new knowledge migration is verified independently. Full migration deployment
-needs a separate resolution of that baseline. See [API.md](API.md) for the
-minimal record fields and repository calls.
+`go test ./...` and `go run ./cmd/migrate -check` should pass on this branch.
+See [API.md](API.md) for the minimal record fields and repository calls.
 
 ## Snowflake Local Development Setup
 

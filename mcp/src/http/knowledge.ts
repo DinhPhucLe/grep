@@ -24,10 +24,22 @@ export type KnowledgePostArgs = {
 export type HttpBackendConfig = {
   apiBase: string;
   orgId: string;
+  sessionToken?: string;
 };
 
 function normalizeBase(apiBase: string): string {
   return apiBase.replace(/\/+$/, '');
+}
+
+function authHeaders(cfg: HttpBackendConfig, jsonBody: boolean): HeadersInit {
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (jsonBody) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (cfg.sessionToken) {
+    headers.Authorization = `Bearer ${cfg.sessionToken}`;
+  }
+  return headers;
 }
 
 export async function httpKnowledgeSearch(
@@ -35,7 +47,9 @@ export async function httpKnowledgeSearch(
   cfg: HttpBackendConfig,
 ): Promise<KnowledgeSearchResult> {
   const url = new URL(`${normalizeBase(cfg.apiBase)}/api/v1/knowledge`);
-  url.searchParams.set('organizationId', cfg.orgId);
+  if (cfg.orgId) {
+    url.searchParams.set('organizationId', cfg.orgId);
+  }
   url.searchParams.set('query', args.query);
   url.searchParams.set('k', String(args.k ?? 5));
   if (args.author) {
@@ -58,7 +72,7 @@ export async function httpKnowledgeSearch(
     }
   }
 
-  const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+  const res = await fetch(url, { method: 'GET', headers: authHeaders(cfg, false) });
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`knowledge search failed (${res.status}): ${body}`);
@@ -70,19 +84,21 @@ export async function httpKnowledgePost(
   args: KnowledgePostArgs,
   cfg: HttpBackendConfig,
 ): Promise<KnowledgeDocument> {
+  const payload: Record<string, unknown> = {
+    content: args.content,
+    topics: args.topics,
+    properties: args.properties ?? {},
+  };
+  // When authenticated, the API derives authors and organizationId from the session.
+  if (!cfg.sessionToken) {
+    payload.authors = args.authors ?? [{ userId: 'mcp', name: 'MCP' }];
+    payload.organizationId = cfg.orgId;
+  }
+
   const res = await fetch(`${normalizeBase(cfg.apiBase)}/api/v1/knowledge`, {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      content: args.content,
-      topics: args.topics,
-      properties: args.properties ?? {},
-      authors: args.authors ?? [{ userId: 'mcp', name: 'MCP' }],
-      organizationId: cfg.orgId,
-    }),
+    headers: authHeaders(cfg, true),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const body = await res.text();

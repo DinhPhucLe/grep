@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"cortisol-server/internal/auth"
 	"cortisol-server/internal/cortex"
 	"cortisol-server/internal/db"
 	"cortisol-server/internal/evaluation"
@@ -63,6 +64,12 @@ func run() error {
 	}()
 	log.Printf("MongoDB connected; selected database %q", database.Name())
 
+	authConfig, err := auth.ConfigFromEnv()
+	if err != nil {
+		return err
+	}
+	authService := auth.NewService(database, authConfig)
+
 	// Evaluation and quiz generation call Cortex directly.
 	service := evaluation.NewService(cortexClient, evaluation.NewMongoRepository(database), cortexConfig.Model)
 	mux := http.NewServeMux()
@@ -79,16 +86,24 @@ func run() error {
 		practice.NewMongoEventRepository(database),
 		practice.NewMongoDirectory(database),
 	)
+	knowledgeHub := orgknowledge.NewHub()
+	knowledgeStore := orgknowledge.NewMongoStore(database)
+	knowledgeHandler := authService.Require(orgknowledge.NewHandler(knowledgeStore, knowledgeHub))
+	eventsHandler := authService.Require(orgknowledge.NewEventsHandler(knowledgeHub))
+
 	mux.Handle("/api/v1/practice-events", practice.NewIngestHandler(practiceService))
 	mux.Handle("/api/v1/dashboard/", practice.NewDashboardHandler(practiceService))
-	mux.Handle("/api/v1/knowledge", orgknowledge.NewHandler(orgknowledge.NewMongoStore(database)))
+	authService.Register(mux)
+	mux.Handle("/api/v1/knowledge", knowledgeHandler)
+	mux.Handle("/api/v1/knowledge/events", eventsHandler)
 
 	address := os.Getenv("HTTP_ADDR")
 	if address == "" {
 		address = "127.0.0.1:8080"
 	}
+	// WriteTimeout is 0 so SSE knowledge/events connections can stay open.
 	server := &http.Server{Addr: address, Handler: mux, ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout: 15 * time.Second, WriteTimeout: cortexConfig.Timeout + 15*time.Second, IdleTimeout: 60 * time.Second}
+		ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	log.Printf("server listening on %s", address)
 	return server.ListenAndServe()
 }

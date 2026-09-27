@@ -41,6 +41,7 @@ Env:
 | `CORTISOL_ORG_ID` | `demo-org` | Scoped onto knowledge search/post |
 | `MCP_BACKEND` | `mock` | `mock` or `http` |
 | `CORTISOL_API_BASE` | `http://127.0.0.1:8080` | Used when `MCP_BACKEND=http` |
+| `CORTISOL_SESSION_TOKEN` | (empty) | Bearer session from TUI `/login`; required for live knowledge API |
 
 With `MCP_BACKEND=http`, tools hit `GET/POST /api/v1/knowledge` on the Go API
 (`knowledge_documents` + Atlas voyage-code-4 autoEmbed).

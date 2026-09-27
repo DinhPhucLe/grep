@@ -169,11 +169,20 @@ AI-Generated Code for Enhanced Learning* (IUI 2025; arXiv:2410.08922).
                                          └──────────────────┘
 ```
 
-- **Go API** (`server/cmd/server`): practice, evaluations, dashboard; Atlas via
-  `MONGODB_URI`.
+- **Go API** (`server/cmd/server`): practice, evaluations, dashboard, **GitHub
+  device-flow auth**, org knowledge (+ SSE); Atlas via `MONGODB_URI`.
+- **Auth (demo):** TUI `/login` starts GitHub device flow; API issues a bearer
+  session. Every new GitHub user is **auto-joined into the default org**
+  (`CORTISOL_DEFAULT_ORG_ID`, defaults to seeded NovaPay). Knowledge GET/POST
+  require `Authorization: Bearer` and derive `authors` + `organizationId` from
+  the session (clients cannot spoof attribution). Live updates:
+  `GET /api/v1/knowledge/events` (SSE).
+- **Deferred:** org **invitations** / join codes / multi-org switcher — everyone
+  lands in the same default org for now.
 - **MCP** (`mcp/`): agent tools for org knowledge (+ `quack` smoke); `MCP_BACKEND=http`
-  calls Go `/api/v1/knowledge` (mock backend still available offline). Slack is the
-  official Slack MCP, configured next to Cortisol in Codex/Cursor — not reimplemented here.
+  calls Go `/api/v1/knowledge` with optional `CORTISOL_SESSION_TOKEN` (mock backend
+  still available offline). Slack is the official Slack MCP, configured next to
+  Cortisol in Codex/Cursor — not reimplemented here.
 - **Compose** packages only those two HTTP services; Atlas stays cloud-hosted.
 - **Codex** generates code in the TUI loop; **Cortex** evaluates prompts.
 

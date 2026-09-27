@@ -34,7 +34,7 @@ describe('httpKnowledgeSearch', () => {
 
     const result = await httpKnowledgeSearch(
       { query: 'payment retry', k: 5 },
-      { apiBase: 'http://api:8080', orgId: 'org-novapay' },
+      { apiBase: 'http://api:8080', orgId: 'org-novapay', sessionToken: 'tok' },
     );
 
     assert.equal(calls.length, 1);
@@ -43,6 +43,7 @@ describe('httpKnowledgeSearch', () => {
     assert.equal(url.searchParams.get('organizationId'), 'org-novapay');
     assert.equal(url.searchParams.get('query'), 'payment retry');
     assert.equal(url.searchParams.get('k'), '5');
+    assert.equal((calls[0].init?.headers as Record<string, string>).Authorization, 'Bearer tok');
     assert.equal(result.items.length, 1);
     assert.equal(result.scores?.[0], 0.91);
   });
@@ -61,7 +62,7 @@ describe('httpKnowledgePost', () => {
     mock.restoreAll();
   });
 
-  it('POSTs document with organizationId injected', async () => {
+  it('POSTs document without spoofable authors when session token present', async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ url: String(input), init });
@@ -82,14 +83,15 @@ describe('httpKnowledgePost', () => {
 
     const doc = await httpKnowledgePost(
       { content: 'note', topics: ['t'], authors: [{ userId: 'u' }] },
-      { apiBase: 'http://api:8080', orgId: 'org-novapay' },
+      { apiBase: 'http://api:8080', orgId: 'org-novapay', sessionToken: 'tok' },
     );
 
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url, 'http://api:8080/api/v1/knowledge');
     assert.equal(calls[0].init?.method, 'POST');
     const body = JSON.parse(String(calls[0].init?.body));
-    assert.equal(body.organizationId, 'org-novapay');
+    assert.equal(body.organizationId, undefined);
+    assert.equal(body.authors, undefined);
     assert.equal(body.content, 'note');
     assert.equal(doc.id, 'newid');
   });

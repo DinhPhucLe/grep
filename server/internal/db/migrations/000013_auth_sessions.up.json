@@ -1,0 +1,105 @@
+[
+  {
+    "collMod": "users",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["_id", "name", "mail", "created_at"],
+        "additionalProperties": false,
+        "properties": {
+          "_id": {
+            "bsonType": "objectId",
+            "description": "USER ID: MongoDB ObjectId."
+          },
+          "name": {
+            "bsonType": "string",
+            "description": "USER NAME: Required string."
+          },
+          "mail": {
+            "bsonType": "string",
+            "description": "USER MAIL: Required string."
+          },
+          "created_at": {
+            "bsonType": "date",
+            "description": "CREATED AT: Required BSON date supplied by the application."
+          },
+          "github_id": {
+            "bsonType": "string",
+            "description": "GitHub numeric user id as string; optional for seed users."
+          },
+          "github_login": {
+            "bsonType": "string",
+            "description": "GitHub login handle; optional for seed users."
+          },
+          "avatar_url": {
+            "bsonType": "string",
+            "description": "GitHub avatar URL; optional."
+          }
+        }
+      }
+    },
+    "validationLevel": "strict",
+    "validationAction": "error"
+  },
+  {
+    "createIndexes": "users",
+    "indexes": [
+      {
+        "key": { "github_id": 1 },
+        "name": "users_by_github_id",
+        "unique": true,
+        "sparse": true
+      }
+    ]
+  },
+  {
+    "create": "auth_sessions",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["_id", "user_id", "token_hash", "expires_at", "created_at"],
+        "additionalProperties": false,
+        "properties": {
+          "_id": { "bsonType": "objectId" },
+          "user_id": {
+            "bsonType": "objectId",
+            "description": "References users._id; existence checked by the application."
+          },
+          "token_hash": {
+            "bsonType": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "SHA-256 hex digest of the opaque bearer token."
+          },
+          "expires_at": { "bsonType": "date" },
+          "created_at": { "bsonType": "date" },
+          "user_agent": {
+            "bsonType": "string",
+            "maxLength": 512
+          }
+        }
+      }
+    },
+    "validationLevel": "strict",
+    "validationAction": "error"
+  },
+  {
+    "createIndexes": "auth_sessions",
+    "indexes": [
+      {
+        "key": { "token_hash": 1 },
+        "name": "auth_sessions_by_token_hash",
+        "unique": true
+      },
+      {
+        "key": { "expires_at": 1 },
+        "name": "auth_sessions_expire",
+        "expireAfterSeconds": 0
+      },
+      {
+        "key": { "user_id": 1 },
+        "name": "auth_sessions_by_user"
+      }
+    ]
+  }
+]

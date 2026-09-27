@@ -37,6 +37,21 @@ func (m *model) statusText() string {
 	if m.busy && !m.opts.ReducedMotion {
 		s = string([]rune("◐◓◑◒")[(m.frame/3)%4]) + " " + s
 	}
+	if m.auth != nil {
+		who := m.auth.GitHubLogin
+		if who == "" {
+			who = m.auth.Name
+		}
+		identity := who
+		if m.auth.OrgName != "" {
+			identity += " · " + m.auth.OrgName
+		}
+		if s == "" {
+			s = identity
+		} else {
+			s = identity + " · " + s
+		}
+	}
 	return ansi.Truncate(s, m.width, "")
 }
 func (m *model) requestBudget() int {
@@ -195,6 +210,8 @@ Drag over conversation text: select it
 Ctrl+C: copy selected text
 Ctrl+V / Insert: paste into the composer
 /quit: exit (also works during approvals)
+/login: GitHub device login
+/logout: clear local session
 F1 or Esc: close this help`
 
 func (m *model) helpView() string {

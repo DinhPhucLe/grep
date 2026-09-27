@@ -2,8 +2,19 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { resolveRoutePath } from '../App';
+import { AuthProvider } from '../auth/AuthProvider';
 import { LandingPage } from '../components/LandingPage';
 import { dashboardTheme } from '../config/theme';
+
+function renderLanding() {
+  return render(
+    <MantineProvider theme={dashboardTheme} defaultColorScheme="light">
+      <AuthProvider>
+        <LandingPage />
+      </AuthProvider>
+    </MantineProvider>,
+  );
+}
 
 describe('resolveRoutePath', () => {
   it('maps people and organization paths', () => {
@@ -18,6 +29,7 @@ describe('resolveRoutePath', () => {
 
 describe('LandingPage', () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -45,14 +57,11 @@ describe('LandingPage', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    localStorage.clear();
   });
 
   it('renders empty landing with people and organization search', async () => {
-    render(
-      <MantineProvider theme={dashboardTheme} defaultColorScheme="light">
-        <LandingPage />
-      </MantineProvider>,
-    );
+    renderLanding();
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
     expect(screen.getByText(/Select a person or organization/i)).toBeInTheDocument();
