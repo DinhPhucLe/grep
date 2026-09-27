@@ -1,0 +1,9 @@
+.env
+.git
+**/*_test.go
+**/testdata
+cmd/tui
+cmd/seed
+cmd/migrate
+internal/evaluation/docs
+internal/evaluation/examples

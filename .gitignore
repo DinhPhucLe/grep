@@ -209,6 +209,15 @@ dashboard/dist/
 dashboard/coverage/
 dashboard/*.tsbuildinfo
 
+# MCP HTTP server
+mcp/node_modules/
+mcp/dist/
+mcp/*.tsbuildinfo
+
+# Codex project config may hold OAuth-related local state; keep the example
+.codex/config.toml
+!.codex/config.toml.example
+
 # Go CLI build artifacts and local toolchain caches
 cli/bin/
 cli/coverage.out
