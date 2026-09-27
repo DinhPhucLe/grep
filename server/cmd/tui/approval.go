@@ -40,7 +40,7 @@ func (m *model) requestView() string {
 			details = r.message.Method + "\n" + string(b)
 		}
 		choice = fmt.Sprintf("%s (%d/%d)", r.choices[r.selected].label, r.selected+1, len(r.choices))
-		if r.message.Method == "mcpServer/elicitation/request" && r.selected == 1 {
+		if r.message.Method == "mcpServer/elicitation/request" && r.selected == 2 {
 			inputPrefix = "JSON: "
 		}
 	}
@@ -229,14 +229,21 @@ func (m *model) enqueueRequest(msg wireMessage) tea.Cmd {
 		}
 		r.configureQuestion()
 	case "mcpServer/elicitation/request":
-		// Elicitation forms can have arbitrary JSON schemas. Collect a JSON object
-		// verbatim and let the server validate it; never fabricate form answers.
-		r.choices = []requestChoice{{"Don't allow", map[string]any{"action": "decline", "content": nil, "_meta": nil}}, {"Send form data (JSON)", nil}, {"Cancel request", map[string]any{"action": "cancel", "content": nil, "_meta": nil}}}
+		// Most MCP elicitations are allow/deny (e.g. "run tool quack?"). Offer a
+		// one-key Allow with empty content; keep custom JSON for real forms.
+		r.choices = []requestChoice{
+			{"Don't allow", map[string]any{"action": "decline", "content": nil, "_meta": nil}},
+			{"Allow", map[string]any{"action": "accept", "content": map[string]any{}, "_meta": nil}},
+			{"Send form data (JSON)", nil},
+			{"Cancel request", map[string]any{"action": "cancel", "content": nil, "_meta": nil}},
+		}
+		r.selected = 1
 	default:
 		return m.reply(msg, nil, &rpcError{Code: -32601, Message: "Unsupported client request: " + msg.Method})
 	}
 	m.requests = append(m.requests, r)
 	m.draft.Blur()
+	m.syncRequestInputFocus()
 	m.resize()
 	return nil
 }
@@ -270,7 +277,7 @@ func (m *model) requestKey(k tea.KeyMsg) tea.Cmd {
 	}
 	switch k.String() {
 	case "left", "right", "alt+left", "alt+right":
-		editing := len(r.questions) > 0 || r.message.Method == "mcpServer/elicitation/request" && r.selected == 1
+		editing := len(r.questions) > 0 || m.requestInputActive()
 		if !editing || k.Alt {
 			step := 8
 			if k.String() == "left" || k.String() == "alt+left" {
@@ -296,10 +303,12 @@ func (m *model) requestKey(k tea.KeyMsg) tea.Cmd {
 	case "tab", "down":
 		r.selected = (r.selected + 1) % max(1, count)
 		r.detailOffset = 0
+		m.syncRequestInputFocus()
 		return nil
 	case "shift+tab", "up":
 		r.selected = (r.selected + max(1, count) - 1) % max(1, count)
 		r.detailOffset = 0
+		m.syncRequestInputFocus()
 		return nil
 	case "enter":
 		if m.requestInputActive() && (strings.TrimSpace(r.input.Value()) == "/quit" || strings.TrimSpace(r.input.Value()) == "/exit") {
@@ -319,16 +328,21 @@ func (m *model) requestKey(k tea.KeyMsg) tea.Cmd {
 			r.question++
 			if r.question < len(r.questions) {
 				r.configureQuestion()
+				m.syncRequestInputFocus()
 				m.resize()
 				return nil
 			}
 			result = map[string]any{"answers": r.answers}
 		} else {
 			result = r.choices[r.selected].result
-			if r.message.Method == "mcpServer/elicitation/request" && r.selected == 1 {
+			if r.message.Method == "mcpServer/elicitation/request" && r.selected == 2 {
+				raw := strings.TrimSpace(r.input.Value())
+				if raw == "" {
+					raw = "{}"
+				}
 				var content any
-				if json.Unmarshal([]byte(r.input.Value()), &content) != nil {
-					m.status = "Enter valid JSON for the form"
+				if json.Unmarshal([]byte(raw), &content) != nil {
+					m.status = "Enter valid JSON for the form (or pick Allow)"
 					return nil
 				}
 				result = map[string]any{"action": "accept", "content": content, "_meta": nil}
