@@ -63,7 +63,7 @@ func (m *model) resize() {
 	if m.statusText() != "" {
 		statusRows = 1
 	}
-	room := m.height - m.headerRows() - m.borderRows() - m.footerRows() - statusRows - m.mascotLaneRows() - 1
+	room := m.height - m.headerRows() - m.borderRows() - m.footerRows() - statusRows - 1
 	m.draft.SetHeight(max(1, min(lines, 6, max(1, m.height/4), room)))
 	m.viewport.Width = m.width
 	m.viewport.Height = max(0, m.height-m.headerRows()-lipgloss.Height(m.bottom()))
@@ -107,12 +107,7 @@ func (m *model) bottom() string {
 	if s := m.statusText(); s != "" {
 		parts = append(parts, s)
 	}
-	if lane := m.mascotLaneRows(); lane > 0 {
-		blank := strings.Repeat(" ", max(0, m.width))
-		for i := 0; i < lane; i++ {
-			parts = append(parts, blank)
-		}
-	}
+
 	input := m.draft.View()
 	if len(m.requests) > 0 {
 		input = m.requestView()
@@ -164,7 +159,7 @@ func (m *model) View() string {
 		}
 	}
 	parts = append(parts, bottom)
-	return m.overlayMascot(fitScreen(strings.Join(parts, "\n"), m.width, m.height))
+	return fitScreen(strings.Join(parts, "\n"), m.width, m.height)
 }
 
 const keyboardHelp = `Keyboard shortcuts
