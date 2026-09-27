@@ -230,6 +230,17 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.status == "Ready" {
 				return m, m.startQuizGeneration()
 			}
+			var ended struct {
+				Turn struct{ Status string }
+			}
+			if json.Unmarshal(v.Params, &ended) == nil && (ended.Turn.Status == "interrupted" || ended.Turn.Status == "failed") {
+				// The same implementation can continue on a later, unscored turn.
+				// Keep its original score and baseline until then.
+				m.quiz.phase = "awaiting_reply"
+				m.quiz.turnID = ""
+				m.status += " — review pending if you continue"
+				return m, nil
+			}
 			m.quizFailure(fmt.Errorf("Codex turn did not complete successfully"))
 		}
 	case tea.WindowSizeMsg:

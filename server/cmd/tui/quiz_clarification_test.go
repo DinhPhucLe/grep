@@ -189,3 +189,30 @@ func TestNewClearRequestDiscardsPendingQuiz(t *testing.T) {
 		t.Fatal("new clear implementation inherited pending quiz")
 	}
 }
+
+func TestInterruptedImplementationCanResumeOriginalQuiz(t *testing.T) {
+	for _, status := range []string{"interrupted", "failed"} {
+		t.Run(status, func(t *testing.T) {
+			m := testQuizModel(t, "")
+			original := m.quiz
+			m.Update(event("turn/completed", `{"threadId":"thread","turn":{"id":"turn","status":"`+status+`"}}`))
+			if m.quiz != original || m.quiz.phase != "awaiting_reply" || m.quizActive() || m.busy {
+				t.Fatalf("interrupted implementation lost pending review: phase=%s", m.quiz.phase)
+			}
+			m.evaluating = true
+			m.draft.SetValue("try to continue again")
+			cmd := m.finishEvaluation(evaluationDoneMsg{sequence: m.evaluationSequence, prompt: "try to continue again", record: evaluation.Record{Evaluation: evaluation.Body{Verdict: "not_applicable", Summary: "Continuation", Gaps: []evaluation.Gap{}}}})
+			if cmd == nil || m.quiz != original || m.quiz.phase != "running" || m.quiz.request.Input != "fix it" {
+				t.Fatal("continuation did not reuse the original quiz context")
+			}
+			m.Update(event("turn/started", `{"threadId":"thread","turn":{"id":"continuation"}}`))
+			if err := os.WriteFile(filepath.Join(m.workspace, "main.go"), []byte("changed implementation\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, generate := m.Update(event("turn/completed", `{"threadId":"thread","turn":{"id":"continuation","status":"completed"}}`))
+			if generate == nil {
+				t.Fatal("completed continuation did not start the original quiz review")
+			}
+		})
+	}
+}
