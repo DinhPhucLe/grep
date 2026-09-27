@@ -10,8 +10,8 @@ import (
 	"cortisol-server/internal/evaluation"
 )
 
-const AmbiguityThreshold = 0.3
-const MaxQuestions = 6
+const AmbiguityThreshold = evaluation.AmbiguityThreshold
+const MaxQuestions = 4
 
 // File contains the generated version of a file. Line references are one-based
 // and relative to Content, which must be the complete file, not a diff.
@@ -26,7 +26,7 @@ type Request struct {
 	Conversation []evaluation.Message `json:"conversation,omitempty"`
 	Evaluation   evaluation.Body      `json:"evaluation"`
 	Files        []File               `json:"files"`
-	// Zero/omitted defaults to six. Callers may lower the cap to four or five.
+	// Zero/omitted defaults to four. Callers may lower the cap to any value from one to four.
 	MaxQuestions int `json:"max_questions,omitempty"`
 }
 
@@ -41,11 +41,11 @@ func (r Request) Validate() error {
 	if err := (evaluation.Request{Input: r.Input, Context: r.Context, Conversation: r.Conversation}).Validate(); err != nil {
 		return err
 	}
-	if r.Evaluation.Validate() != nil || r.Evaluation.Verdict != "ambiguous" || !(r.Evaluation.AmbiguityScore > AmbiguityThreshold) {
+	if r.Evaluation.Validate() != nil || r.Evaluation.Verdict != "ambiguous" || r.Evaluation.AmbiguityScore == nil || !(*r.Evaluation.AmbiguityScore > AmbiguityThreshold) {
 		return errors.New("quiz requires an ambiguous evaluation with ambiguity_score > 0.3 and consequential gaps")
 	}
-	if r.limit() < 4 || r.limit() > MaxQuestions {
-		return errors.New("max_questions must be 4, 5, or 6 (default 6)")
+	if r.limit() < 1 || r.limit() > MaxQuestions {
+		return errors.New("max_questions must be between 1 and 4 (default 4)")
 	}
 	if len(r.Files) == 0 || len(r.Files) > 30 {
 		return errors.New("provide 1 to 30 generated files")
@@ -97,6 +97,10 @@ type Result struct {
 // Validate checks grounding references and cardinality, not semantic correctness.
 // Whether questions accurately explain code remains an LLM quality limitation.
 func (r Result) Validate(request Request) error {
+	return r.validate(request, true)
+}
+
+func (r Result) validate(request Request, requireIndependent bool) error {
 	if r.Questions == nil || len(r.Questions) > request.limit() {
 		return errors.New("invalid question count")
 	}
@@ -131,12 +135,16 @@ func (r Result) Validate(request Request) error {
 			}
 			seenGaps[gap] = true
 		}
-		for _, ref := range question.Evidence {
-			if ref.StartLine < 1 || ref.EndLine < ref.StartLine || ref.EndLine > lineCounts[ref.FilePath] {
-				return errors.New("invalid code reference")
+		for refIndex, ref := range question.Evidence {
+			lineCount, exists := lineCounts[ref.FilePath]
+			if !exists {
+				return fmt.Errorf("invalid code reference: question %d evidence %d names an unknown file", n+1, refIndex+1)
+			}
+			if ref.StartLine < 1 || ref.EndLine < ref.StartLine || ref.EndLine > lineCount {
+				return fmt.Errorf("invalid code reference: question %d evidence %d has range %d..%d; expected 1 <= start <= end within 1..%d", n+1, refIndex+1, ref.StartLine, ref.EndLine, lineCount)
 			}
 			for _, prior := range priorEvidence {
-				if ref.FilePath == prior.FilePath && ref.StartLine <= prior.EndLine && prior.StartLine <= ref.EndLine {
+				if requireIndependent && evidenceOverlaps(ref, prior) {
 					return errors.New("questions must use independently revealable, non-overlapping code ranges")
 				}
 			}
@@ -144,4 +152,31 @@ func (r Result) Validate(request Request) error {
 		priorEvidence = append(priorEvidence, question.Evidence...)
 	}
 	return nil
+}
+
+func evidenceOverlaps(a, b Evidence) bool {
+	return a.FilePath == b.FilePath && a.StartLine <= b.EndLine && b.StartLine <= a.EndLine
+}
+
+// Keep the model's order and wording, dropping later questions whose answers
+// would already be exposed by an earlier reveal. Call only after validating
+// every generated question's structure and grounding, including dropped ones.
+func (r Result) independentQuestions() Result {
+	kept := make([]Question, 0, len(r.Questions))
+	var revealed []Evidence
+questions:
+	for _, q := range r.Questions {
+		for _, ref := range q.Evidence {
+			for _, prior := range revealed {
+				if evidenceOverlaps(ref, prior) {
+					continue questions
+				}
+			}
+		}
+		q.ID = fmt.Sprintf("q%d", len(kept)+1)
+		kept = append(kept, q)
+		revealed = append(revealed, q.Evidence...)
+	}
+	r.Questions = kept
+	return r
 }

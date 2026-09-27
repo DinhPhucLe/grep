@@ -15,7 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const ambiguityThreshold = 0.3
+const ambiguityThreshold = evaluation.AmbiguityThreshold
 
 type promptEvaluation struct {
 	Record    evaluation.Record
@@ -114,17 +114,17 @@ func fetchEvaluation(ctx context.Context, server string, input evaluation.Reques
 		return record, fmt.Errorf("could not reach evaluation API (check server or timeout)")
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusCreated {
+	if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusOK {
 		return record, fmt.Errorf("evaluation API returned HTTP %d", response.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
 	if err != nil || len(data) > 1<<20 {
 		return record, fmt.Errorf("could not read evaluation response")
 	}
-	// Missing/null scores must not silently become zero and pass the threshold.
+	// Explicit null skips evaluation; a missing field is not a valid response.
 	var required struct {
 		Evaluation struct {
-			Score *float64 `json:"ambiguity_score"`
+			Score json.RawMessage `json:"ambiguity_score"`
 		} `json:"evaluation"`
 	}
 	if json.Unmarshal(data, &required) != nil || required.Evaluation.Score == nil || json.Unmarshal(data, &record) != nil || record.Evaluation.Validate() != nil {
@@ -143,17 +143,16 @@ func (m *model) finishEvaluation(result evaluationDoneMsg) tea.Cmd {
 		m.status = "Evaluation failed: " + result.err.Error() + " — Enter to retry"
 		return nil // Keep the draft; do not send an unevaluated prompt to Codex.
 	}
-	m.lastEvaluation = &promptEvaluation{Record: result.record, NeedsQuiz: result.record.Evaluation.AmbiguityScore > ambiguityThreshold}
+	score := result.record.Evaluation.AmbiguityScore
+	m.lastEvaluation = &promptEvaluation{Record: result.record, NeedsQuiz: score != nil && *score > ambiguityThreshold}
 	branch := "Pass — no quiz"
 	if m.lastEvaluation.NeedsQuiz {
-		branch = "Quiz after implementation — code review will reveal sections as you answer"
-	} else {
-		// TODO: Award clear-prompt points.
+		branch = "Quiz after implementation — review referenced code in your editor"
 	}
-	m.items = append(m.items,
-		&conversationItem{kind: "userMessage", raw: result.prompt, done: true},
-		&conversationItem{kind: "evaluation", command: fmt.Sprintf("Ambiguity score: %.2f", result.record.Evaluation.AmbiguityScore), status: branch, raw: result.record.Evaluation.Summary, done: true},
-	)
+	m.items = append(m.items, &conversationItem{kind: "userMessage", raw: result.prompt, done: true})
+	if score != nil {
+		m.items = append(m.items, &conversationItem{kind: "evaluation", command: fmt.Sprintf("Ambiguity score: %.2f", *score), status: branch, raw: result.record.Evaluation.Summary, done: true})
+	}
 	if m.draft.Value() == result.prompt {
 		m.draft.Reset()
 	}

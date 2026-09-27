@@ -12,7 +12,6 @@ import (
 	"cortisol-server/internal/db"
 	"cortisol-server/internal/evaluation"
 	"cortisol-server/internal/health"
-	"cortisol-server/internal/jobs"
 	"cortisol-server/internal/quiz"
 	"cortisol-server/internal/timing"
 
@@ -61,21 +60,14 @@ func run() error {
 	}()
 	log.Printf("MongoDB connected; selected database %q", database.Name())
 
-	// INITIALIZE JOB QUEUE AND HTTP SERVER
+	// Evaluation and quiz generation call Cortex directly.
 	service := evaluation.NewService(cortexClient, evaluation.NewMongoRepository(database), cortexConfig.Model)
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/health", health.Handler)
 	handler := evaluation.NewHandler(service, cortexConfig.Timeout)
-	mux.HandleFunc("/evaluations", timing.HTTP("evaluations", handler))
-	mux.HandleFunc("/jobs", timing.HTTP("jobs", handler))
 	quizService := quiz.NewService(cortexClient, cortexConfig.Model)
-	quizGenerator := quiz.NewGenerator(quizService)
-	defer quizGenerator.Close()
-	mux.HandleFunc("/quizzes", timing.HTTP("quizzes", quiz.NewHandler(quizGenerator, cortexConfig.Timeout)))
-	answerQueue := jobs.NewQueue(4, 100, quizService.Grade)
-	defer answerQueue.Close()
-	mux.HandleFunc("/quiz-answers", timing.HTTP("quiz-answers", quiz.NewAnswerHandler(answerQueue, cortexConfig.Timeout)))
+	registerRoutes(mux, handler,
+		quiz.NewHandler(quizService, cortexConfig.Timeout))
 
 	address := os.Getenv("HTTP_ADDR")
 	if address == "" {
@@ -85,4 +77,14 @@ func run() error {
 		ReadTimeout: 15 * time.Second, WriteTimeout: cortexConfig.Timeout + 15*time.Second, IdleTimeout: 60 * time.Second}
 	log.Printf("server listening on %s", address)
 	return server.ListenAndServe()
+}
+
+// Register the local development API without application authentication.
+func registerRoutes(mux *http.ServeMux, evaluate, generate http.HandlerFunc) {
+	mux.HandleFunc("/health", health.Handler)
+	for route, handler := range map[string]http.HandlerFunc{
+		"evaluations": evaluate, "quizzes": generate,
+	} {
+		mux.Handle("/"+route, timing.HTTP(route, handler))
+	}
 }

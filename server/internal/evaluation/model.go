@@ -2,6 +2,7 @@ package evaluation
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -44,15 +45,30 @@ type Gap struct {
 }
 
 type Body struct {
-	Verdict        string  `json:"verdict" bson:"verdict"`
-	Summary        string  `json:"summary" bson:"summary"`
-	AmbiguityScore float64 `json:"ambiguity_score" bson:"ambiguity_score"`
-	Gaps           []Gap   `json:"gaps" bson:"gaps"`
+	Verdict        string   `json:"verdict" bson:"verdict"`
+	Summary        string   `json:"summary" bson:"summary"`
+	AmbiguityScore *float64 `json:"ambiguity_score" bson:"ambiguity_score"`
+	Gaps           []Gap    `json:"gaps" bson:"gaps"`
 }
 
+const AmbiguityThreshold = 0.3
+
 func (b Body) Validate() error {
-	if (b.Verdict != "clear" && b.Verdict != "ambiguous") || strings.TrimSpace(b.Summary) == "" || b.Gaps == nil || len(b.Gaps) > 10 || b.AmbiguityScore < 0 || b.AmbiguityScore > 1 {
+	if strings.TrimSpace(b.Summary) == "" || b.Gaps == nil || len(b.Gaps) > 10 {
 		return errors.New("invalid evaluation fields")
+	}
+	if b.Verdict == "not_applicable" {
+		if b.AmbiguityScore != nil || len(b.Gaps) != 0 {
+			return errors.New("non-implementation messages must have a null score and no gaps")
+		}
+		return nil
+	}
+	if (b.Verdict != "clear" && b.Verdict != "ambiguous") || b.AmbiguityScore == nil {
+		return errors.New("implementation evaluation requires a numeric score")
+	}
+	score := *b.AmbiguityScore
+	if math.IsNaN(score) || math.IsInf(score, 0) || score < 0 || score > 1 || (b.Verdict == "ambiguous") != (score > AmbiguityThreshold) {
+		return errors.New("score does not match verdict")
 	}
 	if (b.Verdict == "clear" && len(b.Gaps) != 0) || (b.Verdict == "ambiguous" && len(b.Gaps) == 0) {
 		return errors.New("verdict does not match gaps")
@@ -66,7 +82,7 @@ func (b Body) Validate() error {
 }
 
 type Record struct {
-	ID            bson.ObjectID `json:"id" bson:"_id"`
+	ID            bson.ObjectID `json:"id,omitzero" bson:"_id"`
 	CreatedAt     time.Time     `json:"created_at" bson:"created_at"`
 	Model         string        `json:"model" bson:"model"`
 	RubricVersion string        `json:"rubric_version" bson:"rubric_version"`

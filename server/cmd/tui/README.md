@@ -96,43 +96,50 @@ To diagnose slow questions, use `--timing-log /tmp/cortisol-tui-timing.jsonl`.
 It records payload-free stage durations separately from the TUI and correlates
 them with server timing logs. See the [data-flow diagram and latency guide](../../internal/timing/README.md).
 
-The TUI branches on the numeric score: `ambiguity_score > 0.3` marks the prompt
-as requiring a quiz; `<= 0.3` passes. An evaluation card shows the score and
-branch, with the summary available on expansion. Both branches send the unchanged
-prompt to Codex. Clear prompts display normally. Ambiguous prompts use the
-following review flow:
+The evaluator first classifies the latest message. Confirmations, approvals,
+clarification answers, explanations, status checks, and other non-implementation
+messages return `verdict: not_applicable` with `ambiguity_score: null`. The TUI
+forwards them unchanged to Codex without an evaluation card or quiz.
 
-1. Hold the turn's assistant text and raw file-change cards while Codex runs.
-2. After a successful turn, collect generated text files. If collection succeeds
-   with no files, show Codex's response, restore the draft, and return to normal
-   chat without calling the quiz API. This includes clarification-only turns.
-   Otherwise call `/quizzes`.
-   The server plans up to six independent code scopes, then generates one question
-   per scope through a shared three-worker queue with six waiting slots.
-3. Once the complete batch arrives, display numbered file snapshots with only
-   unanswered quiz ranges masked. Questions use completion order; no sequential
-   continuation or prefetch requests are needed.
-4. Enter submits the answer to `/quiz-answers`. One wrong answer allows a second
-   attempt. A correct answer or two wrong answers reveals that section; Enter then
-   advances to the next question. Other unanswered sections stay masked.
-5. After the final question, release all original output and return to chat.
+Only implementation/build/change requests get a number. A score above 0.30 requires
+an ambiguous verdict and consequential client-facing gaps; other numeric scores
+pass directly to Codex. Prior context resolves requirements. Internal architecture
+and grading choices are never quiz topics.
 
-Evaluation calls the service directly, without a job queue. The quiz request's
-single timeout covers scope planning and all question jobs. API errors do not
-consume attempts or automatically retry. If generation fails, `/retry` submits a
-new batch and `/reveal` ends the quiz without scoring. `/reveal` can also end an
-active quiz once Codex finishes. It is an explicit user bypass, not a successful
-answer. Restart both server and TUI when updating from the progressive endpoints.
-No new Codex prompt is dispatched while a quiz is active. Drafts composed during
-execution are restored afterward. Points and persistent quiz sessions remain
-unimplemented; answer correctness is a model judgment, not validated comprehension.
+For an ambiguous implementation request:
 
-This is **TUI presentation gating**, not filesystem isolation. Codex still edits
-files on disk; `--log` still records raw RPC traffic. Approvals and server-input
-requests remain fully available and may contain code needed for informed decisions.
-The quiz displays a snapshot taken after the turn, not a live editor. The model
-selects quiz ranges; the server rejects overlapping ranges across questions but
-cannot guarantee that untested code or question prose never hints at an answer.
+1. Show Codex's assistant text and file-change cards normally while it implements.
+2. After successful completion, collect changed text files. If there are none,
+   silently restore normal chat. Otherwise call `/quizzes` once.
+3. The server returns up to four distinct, grounded questions about the most
+   consequential client-visible behaviors. Fewer is fine; never pad to four.
+   If there are no suitable questions, silently return to chat.
+4. Show one question and its file/line references, without printing source files
+   in the quiz panel. Automatically open the first reference at its starting line
+   in the existing VS Code window's editor. Ctrl+O cycles through additional
+   references (or reopens the source if there is only one).
+5. Enter records the answer locally without grading; Enter again advances and
+   opens the next question's source. After the last one, return to chat.
+   `/reveal` ends review early after Codex finishes.
+
+VS Code's `code` command must be on `PATH`. On macOS, use VS Code's Command
+Palette action **Shell Command: Install 'code' command in PATH** if needed.
+The launcher uses `code --reuse-window --goto file:line`; run the TUI from VS Code's
+integrated terminal to target that window. Opening source may focus the editor;
+return to the terminal to answer. A missing CLI/file or editor launch failure
+shows a message alongside the reference and leaves the quiz usable. It never
+triggers another generation request or dumps source as a fallback.
+
+Code stays visible in chat, on disk, and in the editor throughout. Questions are
+based on a snapshot taken after the turn; VS Code opens the live file, so edits
+made after generation can move its referenced lines. No files are rewritten,
+masked, or restored by the quiz. The server drops later questions with overlapping
+evidence to avoid repetitive coverage.
+
+There are no grading requests, correctness feedback, answer retries, points, or
+answer batches. Future grading, if added, will be individual per question.
+Generation errors end the quiz with an explanation; no automatic retries occur.
+Drafts are restored afterward. Codex approvals and input requests remain available.
 
 Collection combines Codex file-change events with Git before/after text hashes,
 so shell edits in tracked or untracked nonignored files are included without
@@ -140,7 +147,7 @@ counting unchanged preexisting dirty files. Non-Git workspaces rely on file-chan
 events; shell-only edits there cannot be reliably captured. Binary/oversized files,
 deletions, and external concurrent edits are not a complete change-review system.
 Successful collection with no eligible files skips the quiz without awarding
-credit. File-collection errors still offer retry or explicit reveal. Code shown
+credit. File-collection errors end the quiz and show the failure reason. Code shown
 only in chat is not currently used as quiz evidence.
 Run the TUI from the intended workspace. Reads are restricted to that workspace,
 including symlink resolution.

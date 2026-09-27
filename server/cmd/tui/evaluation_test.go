@@ -26,7 +26,7 @@ func TestPromptEvaluationBeforeCodex(t *testing.T) {
 				if input.Input != "original prompt" || len(input.Conversation) != 2 || input.Conversation[0].Content != "prior user" || input.Conversation[1].Content != "prior answer" {
 					t.Errorf("wrong context: %+v", input)
 				}
-				body := evaluation.Body{Verdict: "clear", Summary: "Test evaluation", AmbiguityScore: score, Gaps: []evaluation.Gap{}}
+				body := evaluation.Body{Verdict: "clear", Summary: "Test evaluation", AmbiguityScore: scorePtr(score), Gaps: []evaluation.Gap{}}
 				if score > ambiguityThreshold {
 					body.Verdict = "ambiguous"
 					body.Gaps = []evaluation.Gap{{Description: "missing behavior", Consequence: "different result"}}

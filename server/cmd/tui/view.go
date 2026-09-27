@@ -92,9 +92,6 @@ func (m *model) refresh() {
 	focusLine := 0
 	quizLine := 0
 	for n, i := range m.items {
-		if i.withheld {
-			continue
-		}
 		if i.kind == "commandExecution" {
 			continue
 		}
@@ -107,8 +104,6 @@ func (m *model) refresh() {
 				quizLine = strings.Count(b.String(), "\n")
 			}
 			b.WriteString(ansi.Wrap(safeText(i.raw), max(1, m.width-2), ""))
-		case "quizCode":
-			b.WriteString(ansi.Wrap(safeText(quizFileView(i.quizOwner, i.command)), max(1, m.width-2), ""))
 		case "userMessage":
 			b.WriteString(m.accent(m.role(true), "6") + "\n" + ansi.Wrap(safeText(i.raw), max(1, m.width-2), ""))
 		case "agentMessage":

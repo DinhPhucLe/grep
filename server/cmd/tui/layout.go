@@ -83,7 +83,7 @@ func (m *model) footer() string {
 	}
 	text := "Wheel/PgUp/PgDn scroll · Enter send · F1 help"
 	if m.quizActive() {
-		text = "Enter answer/continue · PgUp code review · /reveal end quiz · F1 help"
+		text = "Enter answer/continue · Ctrl+O open source · /reveal end quiz · F1 help"
 	}
 	if m.focus != -1 {
 		text = "↑↓ scroll · End latest · Tab focus · F1 help"
@@ -176,6 +176,8 @@ Left / Right: scroll long approval text
 Alt+Left / Alt+Right: scroll while entering text
 Ctrl+N / Ctrl+P: read approval details down / up
 Ctrl+D: show exact approval request
+Ctrl+O: open/cycle the current quiz source references in VS Code
+/reveal: end the quiz early
 Esc: interrupt the running task
 Drag over conversation text: select it
 Ctrl+C: copy selected text

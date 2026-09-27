@@ -31,7 +31,7 @@ func TestClarificationOnlyTurnReturnsToChatWithoutQuizAPI(t *testing.T) {
 		}
 		evaluations <- input
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(evaluation.Record{Evaluation: evaluation.Body{Verdict: "clear", Summary: "The user selected email/password", AmbiguityScore: 0.1, Gaps: []evaluation.Gap{}}})
+		json.NewEncoder(w).Encode(evaluation.Record{Evaluation: evaluation.Body{Verdict: "not_applicable", Summary: "The user selected an offered option", AmbiguityScore: nil, Gaps: []evaluation.Gap{}}})
 	}))
 	defer server.Close()
 	m := testQuizModel(t, server.URL)
@@ -50,6 +50,11 @@ func TestClarificationOnlyTurnReturnsToChatWithoutQuizAPI(t *testing.T) {
 	if next != nil || m.quizActive() || m.busy || m.status != "Ready" {
 		t.Fatalf("clarification did not return to chat: phase=%s status=%s", m.quiz.phase, m.status)
 	}
+	for _, item := range m.items {
+		if item.kind == "quizPanel" {
+			t.Fatal("no-code turn left a quiz skip notice")
+		}
+	}
 	if quizCalls.Load() != 0 {
 		t.Fatal("clarification-only turn called quiz API")
 	}
@@ -58,11 +63,6 @@ func TestClarificationOnlyTurnReturnsToChatWithoutQuizAPI(t *testing.T) {
 	}
 	if !strings.Contains(m.viewport.View(), clarification) {
 		t.Fatal("clarification is still hidden")
-	}
-	for _, item := range m.items {
-		if item.quizOwner == m.quiz && item.withheld {
-			t.Fatal("held output was not released")
-		}
 	}
 	_, next = m.Update(reply)
 	if next != nil {
@@ -111,17 +111,13 @@ func TestQuizCollectionErrorsStillFailWithoutAPI(t *testing.T) {
 	m.Update(event("item/completed", `{"threadId":"thread","turnId":"turn","item":{"id":"change","type":"fileChange","status":"completed","changes":[{"path":"binary.bin","kind":{"type":"add"}}]}}`))
 	m.Update(event("item/completed", `{"threadId":"thread","turnId":"turn","item":{"id":"answer","type":"agentMessage","text":"Implementation output"}}`))
 	_, next := m.Update(m.startQuizGeneration()())
-	if next != nil || m.quiz.phase != "failed" || calls.Load() != 0 {
+	if next != nil || m.quiz.phase != "done" || calls.Load() != 0 {
 		t.Fatal("collection error was treated as normal empty output")
 	}
 	if !strings.Contains(m.quiz.panel.raw, "not text") {
 		t.Fatal("collection failure lost its reason")
 	}
-	for _, item := range m.items {
-		if item.kind == "agentMessage" && !item.withheld {
-			t.Fatal("failed collection released held output")
-		}
-	}
+
 }
 
 func TestLateNoFilesResultDoesNotCloseNewQuiz(t *testing.T) {

@@ -85,9 +85,13 @@ and protocol details, see [`server/cmd/tui/README.md`](server/cmd/tui/README.md)
 
 The server also exposes a standalone [`POST /quizzes` endpoint](server/internal/quiz/README.md)
 for generating questions from ambiguous prompts and generated code. The TUI
-receives a complete quiz from `/quizzes` after three workers generate up to six
-independent questions, grades answers through `/quiz-answers`, and
-progressively reveals the corresponding code in its review view.
+receives up to four questions from `/quizzes` through one Snowflake request,
+presents them one at a time with local, ungraded answers, and
+opens each question's referenced file and line in the VS Code editor (`code` on `PATH`).
+Code remains visible throughout; Ctrl+O cycles through additional references.
+Only explicit implementation requests receive an ambiguity score. Confirmations
+and other conversation return a null score and go directly to Codex.
+Null-score results are not saved; no database migration is needed for this flow.
 
 These instructions cover team Snowflake access for local development. This branch does not yet include the Snowflake connection checker referenced below; the account and user setup can be completed independently.
 

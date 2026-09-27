@@ -28,8 +28,6 @@ type conversationItem struct {
 	cacheRaw                                string
 	cacheWidth                              int
 	stream                                  strings.Builder
-	withheld                                bool
-	quizOwner                               *quizSession
 }
 type model struct {
 	timingSink      timing.Sink
@@ -64,6 +62,7 @@ type model struct {
 	cancelEvaluation                          context.CancelFunc
 	lastEvaluation                            *promptEvaluation
 	quiz                                      *quizSession
+	openSource                                func(context.Context, string, int) error
 	quizJump                                  bool
 	evaluationContext                         []evaluation.Message
 }
@@ -91,6 +90,7 @@ func newModel(c *appServer, cwd string, o uiOptions) *model {
 	}
 	m := &model{client: c, ctx: context.Background(), opts: o, workspace: cwd, status: "Connecting", width: 80, height: 24, draft: d, viewport: viewport.New(80, 16), follow: true, focus: -1, byID: map[string]*conversationItem{}, seenRequests: map[string]bool{}}
 	m.clipboard = systemClipboard{}
+	m.openSource = openVSCodeSource
 	m.resize()
 	return m
 }
@@ -137,8 +137,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
-	case quizPreparedMsg, quizGeneratedMsg, quizGradedMsg:
+	case quizPreparedMsg, quizGeneratedMsg:
 		return m, m.handleQuizMessage(v)
+	case quizSourceOpenedMsg:
+		return m, m.handleQuizSourceOpened(v)
 	case evaluationDoneMsg:
 		return m, m.finishEvaluation(v)
 	case clipboardResult:
@@ -336,6 +338,8 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.requestKey(v)
 		}
 		switch v.String() {
+		case "ctrl+o":
+			return m, m.nextQuizSource()
 		case "pgup":
 			m.scrollHistory(-m.viewport.Height)
 			return m, nil
@@ -364,7 +368,7 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab", "shift+tab":
 			controls := []int{-1, -2} // composer, history, then activity cards
 			for n, i := range m.items {
-				if !i.withheld && (i.kind == "fileChange" || i.kind == "evaluation") {
+				if i.kind == "fileChange" || i.kind == "evaluation" {
 					controls = append(controls, n)
 				}
 			}
@@ -494,10 +498,6 @@ func (m *model) item(turn, id, kind string) *conversationItem {
 		return i
 	}
 	i := &conversationItem{key: key, kind: kind}
-	if m.quizActive() && (m.quiz.phase == "running" || m.quiz.turnID == turn) {
-		i.withheld = true
-		i.quizOwner = m.quiz
-	}
 	m.byID[key] = i
 	m.items = append(m.items, i)
 	return i

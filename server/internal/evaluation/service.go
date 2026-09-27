@@ -45,9 +45,9 @@ func (s *Service) Evaluate(ctx context.Context, request Request) (Record, error)
 		return Record{}, err
 	}
 	var body Body
-	// A float64 alone cannot distinguish a missing/null score from a valid zero.
+	// Explicit null means not applicable; an omitted field is still malformed.
 	var required struct {
-		Score *float64 `json:"ambiguity_score"`
+		Score json.RawMessage `json:"ambiguity_score"`
 	}
 	if json.Unmarshal(raw, &required) != nil || required.Score == nil {
 		return Record{}, cortex.ErrInvalidResponse
@@ -57,7 +57,11 @@ func (s *Service) Evaluate(ctx context.Context, request Request) (Record, error)
 	if decoder.Decode(&body) != nil || decoder.Decode(new(any)) != io.EOF || body.Validate() != nil {
 		return Record{}, cortex.ErrInvalidResponse
 	}
-	record := Record{ID: bson.NewObjectID(), CreatedAt: time.Now().UTC(), Model: s.model, RubricVersion: rubricVersion, Request: request, Evaluation: body}
+	record := Record{CreatedAt: time.Now().UTC(), Model: s.model, RubricVersion: rubricVersion, Request: request, Evaluation: body}
+	if body.AmbiguityScore == nil {
+		return record, nil
+	}
+	record.ID = bson.NewObjectID()
 	insertStarted := time.Now()
 	err = s.repository.Insert(ctx, record)
 	timing.Record(ctx, "mongo.insert", insertStarted, err, nil)

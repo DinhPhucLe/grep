@@ -23,13 +23,16 @@ type quizSession struct {
 	result            quiz.Result
 	baseline          fileSnapshot
 	turnID            string
-	phase             string // preparing, running, generating, question, grading, reveal, failed, done
-	index, attempts   int
-	resolved          map[int]bool
+	phase             string // preparing, running, generating, question, reveal, done
+	index             int
+	sourceIndex       int
+	editorSequence    int
+	editorNotice      string
+	editorCancel      context.CancelFunc
+	feedback          string
 	savedDraft        string
 	panel             *conversationItem
 	cancel            context.CancelFunc
-	feedback          string
 }
 type quizPreparedMsg struct {
 	session  *quizSession
@@ -42,16 +45,11 @@ type quizGeneratedMsg struct {
 	result  quiz.Result
 	err     error
 }
-type quizGradedMsg struct {
-	session *quizSession
-	correct bool
-	err     error
-}
 
 func (m *model) quizActive() bool { return m.quiz != nil && m.quiz.phase != "done" }
 
 func (m *model) prepareQuiz(prompt string) tea.Cmd {
-	q := &quizSession{request: quiz.Request{Input: prompt, Evaluation: m.lastEvaluation.Record.Evaluation, Conversation: m.evaluationContext}, phase: "preparing", resolved: map[int]bool{}}
+	q := &quizSession{request: quiz.Request{Input: prompt, Evaluation: m.lastEvaluation.Record.Evaluation, Conversation: m.evaluationContext}, phase: "preparing"}
 	m.quiz = q
 	m.status = "Preparing code review…"
 	workspace := m.workspace
@@ -78,7 +76,7 @@ func (m *model) startQuizGeneration() tea.Cmd {
 		q.panel = &conversationItem{kind: "quizPanel", done: true, expanded: true}
 		m.items = append(m.items, q.panel)
 	}
-	q.panel.raw = "Preparing quiz. Generated output is temporarily withheld in this TUI.\nFiles on disk and optional RPC logs remain accessible."
+	q.panel.raw = "Preparing review questions about the completed implementation…"
 	m.quizFocus()
 	var changes []string
 	for _, item := range m.items {
@@ -153,6 +151,20 @@ func postQuizJSON(ctx context.Context, server, route string, input, output any) 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
+		var failure struct {
+			Error struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&failure) == nil {
+			switch failure.Error.Code {
+			case "cortex_invalid_response", "cortex_error", "quiz_timeout":
+				if failure.Error.Message != "" && len(failure.Error.Message) <= 500 {
+					return fmt.Errorf("quiz API returned HTTP %d (%s): %s", resp.StatusCode, failure.Error.Code, failure.Error.Message)
+				}
+			}
+		}
 		return fmt.Errorf("quiz API returned HTTP %d", resp.StatusCode)
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
@@ -195,18 +207,13 @@ func (m *model) handleQuizMessage(msg tea.Msg) tea.Cmd {
 		if len(q.result.Questions) == 0 {
 			if len(q.request.Files) == 0 {
 				timing.Record(m.traceContext(), "quiz.skipped_no_files", q.generationStarted, nil, map[string]int{"files": 0})
-				m.finishQuiz("No generated text files to quiz. Continue the conversation below.")
-			} else {
-				m.finishQuiz("No grounded quiz questions were available. Code review is open.")
 			}
+			m.finishQuiz("")
 			return nil
 		}
 		q.phase = "question"
 		m.busy = false
-		for _, file := range q.request.Files {
-			m.items = append(m.items, &conversationItem{kind: "quizCode", command: file.Path, done: true, expanded: true, quizOwner: q})
-		}
-		// Keep the active question at the end while preserving the code browser above it.
+		// Keep the active question at the end of the conversation.
 		for n, item := range m.items {
 			if item == q.panel {
 				m.items = append(m.items[:n], m.items[n+1:]...)
@@ -220,47 +227,22 @@ func (m *model) handleQuizMessage(msg tea.Msg) tea.Cmd {
 			timing.Record(m.traceContext(), "quiz.first_question_ready", m.promptStarted, nil, nil)
 			timing.Record(m.traceContext(), "quiz.prepare_to_ready", q.generationStarted, nil, nil)
 		}
-		return nil
-	case quizGradedMsg:
-		if m.quiz != v.session || v.session.phase != "grading" {
-			return nil
-		}
-		q := m.quiz
-		m.busy = false
-		if v.err != nil {
-			q.phase = "question"
-			m.showQuizQuestion("Grading unavailable. Your attempt was not counted; press Enter to retry.")
-			return nil
-		}
-		q.attempts++
-		m.draft.Reset()
-		if !v.correct && q.attempts < 2 {
-			q.phase = "question"
-			m.showQuizQuestion("Not correct yet. Try once more.")
-			return nil
-		}
-		q.resolved[q.index] = true
-		q.phase = "reveal"
-		feedback := "Two attempts used. Here is the implementation."
-		if v.correct {
-			feedback = "Correct. Here is the implementation."
-		}
-		m.showQuizQuestion(feedback + "\nPress Enter to continue.")
+		return m.openQuizSource()
+
 	}
 	return nil
 }
 
 func (m *model) quizFailure(err error) {
 	q := m.quiz
-	q.phase = "failed"
-	m.busy = false
 	if q.panel == nil {
 		q.panel = &conversationItem{kind: "quizPanel", done: true}
 		m.items = append(m.items, q.panel)
 	}
-	q.panel.raw = "Quiz unavailable: " + err.Error() + "\nEnter /retry to try again, or /reveal to end this quiz and review all output. No answer attempt was counted."
-	m.status = "Quiz unavailable"
-	m.quizFocus()
+	m.finishQuiz("Quiz unavailable: " + err.Error() + "\nQuiz ended. Continue the conversation below.")
+	if q.turnID == "" {
+		m.draft.SetValue(q.request.Input)
+	}
 }
 
 func (m *model) quizFocus() {
@@ -278,36 +260,33 @@ func (m *model) showQuizQuestion(feedback string) {
 	started := time.Now()
 	defer func() { timing.Record(m.traceContext(), "ui.question_render", started, nil, nil) }()
 	q := m.quiz
-	question := q.result.Questions[q.index]
 	q.feedback = feedback
+	question := q.result.Questions[q.index]
 	var b strings.Builder
-	fmt.Fprintf(&b, "Question %d/%d · attempt %d/2\n", q.index+1, q.questionCount(), min(q.attempts+1, 2))
-	b.WriteString("Review snapshot · hidden in this TUI only; files remain on disk.\n")
+	fmt.Fprintf(&b, "Question %d/%d\n", q.index+1, q.questionCount())
+	b.WriteString("Review the implementation in your editor, then answer. Answers are not graded.\n")
 	fmt.Fprintf(&b, "\n%s\n", question.Question)
 	if feedback != "" {
 		b.WriteString("\n" + feedback + "\n")
 	}
-	for _, ref := range question.Evidence {
-		fmt.Fprintf(&b, "\n%s:%d–%d\n", ref.FilePath, ref.StartLine, ref.EndLine)
-		for _, file := range q.request.Files {
-			if file.Path == ref.FilePath {
-				lines := strings.Split(strings.TrimSuffix(file.Content, "\n"), "\n")
-				for n := max(1, ref.StartLine-2); n <= min(len(lines), ref.EndLine+2); n++ {
-					line := lines[n-1]
-					if quizLineHidden(q, file.Path, n) {
-						line = "[hidden for quiz]"
-					}
-					fmt.Fprintf(&b, "%5d | %s\n", n, line)
-				}
-			}
+	for index, ref := range question.Evidence {
+		marker := " "
+		if index == q.sourceIndex {
+			marker = ">"
 		}
+		fmt.Fprintf(&b, "\n%s %s:%d–%d", marker, ref.FilePath, ref.StartLine, ref.EndLine)
+	}
+	b.WriteString("\nCtrl+O opens/cycles source references in VS Code.\n")
+	if q.editorNotice != "" {
+		b.WriteString("\n" + q.editorNotice + "\n")
 	}
 	q.panel.raw = b.String()
 	m.status = fmt.Sprintf("Quiz %d/%d — answer in the composer", q.index+1, q.questionCount())
-	if q.phase == "reveal" {
-		m.status = "Code revealed — Enter for next question"
-	}
 	m.draft.Placeholder = "Your answer…"
+	if q.phase == "reveal" {
+		m.status = "Answer recorded — Enter for next question"
+		m.draft.Placeholder = "Press Enter to continue…"
+	}
 	m.quizFocus()
 }
 
@@ -317,30 +296,19 @@ func (m *model) quizEnter(text string) tea.Cmd {
 		if q.cancel != nil {
 			q.cancel()
 		}
-		m.finishQuiz("Quiz ended without scoring. All code is available for review.")
-		return nil
-	}
-	if q.phase == "failed" {
-		if text == "/retry" {
-			m.draft.Reset()
-			if q.turnID == "" {
-				m.finishQuiz("Turn was not started; submit the prompt again.")
-				m.draft.SetValue(q.request.Input)
-				return nil
-			}
-			return m.startQuizGeneration()
-		}
+		m.finishQuiz("Review ended. Continue the conversation below.")
 		return nil
 	}
 	if q.phase == "reveal" {
 		q.index++
-		q.attempts = 0
-		m.draft.Reset()
-		if q.index == q.questionCount() {
-			m.finishQuiz("Quiz complete. All implementation code is now visible.")
+		if q.index >= q.questionCount() {
+			m.finishQuiz("Review complete. Answers were not graded.")
 		} else {
 			q.phase = "question"
+			q.sourceIndex = 0
+			q.editorNotice = ""
 			m.showQuizQuestion("")
+			return m.openQuizSource()
 		}
 		return nil
 	}
@@ -351,85 +319,46 @@ func (m *model) quizEnter(text string) tea.Cmd {
 		m.status = "Answer is too long (maximum 8000 bytes)"
 		return nil
 	}
-	q.phase = "grading"
-	m.busy = true
-	m.status = "Checking answer…"
-	request := quiz.AnswerRequest{Quiz: q.request, Questions: q.result, QuestionID: q.result.Questions[q.index].ID, Answer: text}
-	ctx, cancel := context.WithTimeout(m.traceContext(), 75*time.Second)
-	q.cancel = cancel
-	server := m.apiServer()
-	return func() tea.Msg {
-		defer cancel()
-		var response struct {
-			Correct *bool `json:"correct"`
-		}
-		err := postQuizJSON(ctx, server, "quiz-answers", request, &response)
-		if err == nil && response.Correct == nil {
-			err = fmt.Errorf("missing grade")
-		}
-		return quizGradedMsg{q, response.Correct != nil && *response.Correct, err}
-	}
+	m.draft.Reset()
+	q.phase = "reveal"
+	m.showQuizQuestion("Your answer: " + text + "\nRecorded without grading. Press Enter to continue.")
+	return nil
 }
 
 func (m *model) finishQuiz(message string) {
 	q := m.quiz
 	q.phase = "done"
+	if q.editorCancel != nil {
+		q.editorCancel()
+	}
 	if q.cancel != nil {
 		q.cancel()
 	}
 	m.busy = false
-	for n := 0; n < q.questionCount(); n++ {
-		q.resolved[n] = true
-	}
-	for _, item := range m.items {
-		if item.quizOwner == q {
-			item.withheld = false
-		}
-	}
 	if q.panel != nil {
-		q.panel.raw = message
+		if message == "" {
+			for i, item := range m.items {
+				if item == q.panel {
+					m.items = append(m.items[:i], m.items[i+1:]...)
+					break
+				}
+			}
+			q.panel = nil
+		} else {
+			q.panel.raw = message
+		}
 	}
 	m.draft.SetValue(q.savedDraft)
 	m.draft.Placeholder = "Ask Codex…"
 	m.status = "Ready"
-	m.quizFocus()
-}
-
-func quizFileView(q *quizSession, path string) string {
-	var content string
-	for _, file := range q.request.Files {
-		if file.Path == path {
-			content = file.Content
-			break
-		}
+	if message == "" {
+		m.follow = true
+		m.quizJump = false
+		m.dirty = true
+		m.refresh()
+	} else {
+		m.quizFocus()
 	}
-	var b strings.Builder
-	b.WriteString(path + "\n")
-	lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
-	for n, line := range lines {
-		if quizLineHidden(q, path, n+1) {
-			line = "[hidden for quiz]"
-		}
-		fmt.Fprintf(&b, "%5d | %s\n", n+1, line)
-	}
-	return b.String()
-}
-
-func quizLineHidden(q *quizSession, path string, line int) bool {
-	if q.phase == "done" {
-		return false
-	}
-	for index, question := range q.result.Questions {
-		if q.resolved[index] {
-			continue
-		}
-		for _, ref := range question.Evidence {
-			if ref.FilePath == path && line >= ref.StartLine && line <= ref.EndLine {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func (q *quizSession) questionCount() int {

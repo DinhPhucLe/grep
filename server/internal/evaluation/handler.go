@@ -72,7 +72,11 @@ func NewHandler(service Evaluator, timeout time.Duration) http.HandlerFunc {
 			writeError(w, 500, "evaluation_failed", "evaluation could not be completed")
 		default:
 			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusCreated)
+			if record.Evaluation.AmbiguityScore == nil {
+				w.WriteHeader(http.StatusOK)
+			} else {
+				w.WriteHeader(http.StatusCreated)
+			}
 			_ = json.NewEncoder(w).Encode(record)
 		}
 	}

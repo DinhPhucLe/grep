@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 
 	"cortisol-server/internal/cortex"
 )
 
 type fakeCompleter struct {
+	calls  int
 	raw    string
 	err    error
 	input  string
@@ -17,6 +19,7 @@ type fakeCompleter struct {
 }
 
 func (c *fakeCompleter) Complete(_ context.Context, _ string, input string, schema json.RawMessage) (json.RawMessage, error) {
+	c.calls++
 	c.input = input
 	c.schema = schema
 	return json.RawMessage(c.raw), c.err
@@ -42,6 +45,12 @@ func TestServiceValidationAndPersistence(t *testing.T) {
 	}{
 		{"missing score", `{"verdict":"clear","summary":"Clear","gaps":[]}`, false},
 		{"null score", `{"verdict":"clear","summary":"Clear","ambiguity_score":null,"gaps":[]}`, false},
+		{"unrated with score", `{"verdict":"not_applicable","summary":"Confirmation","ambiguity_score":0.5,"gaps":[]}`, false},
+		{"unrated missing score", `{"verdict":"not_applicable","summary":"Confirmation","gaps":[]}`, false},
+		{"unrated with gaps", `{"verdict":"not_applicable","summary":"Confirmation","ambiguity_score":null,"gaps":[{"description":"gap","consequence":"effect"}]}`, false},
+		{"ambiguous null score", `{"verdict":"ambiguous","summary":"Change requested","ambiguity_score":null,"gaps":[{"description":"gap","consequence":"effect"}]}`, false},
+		{"clear high score", `{"verdict":"clear","summary":"Mismatch","ambiguity_score":0.8,"gaps":[]}`, false},
+
 		{"negative score", `{"verdict":"clear","summary":"Clear","ambiguity_score":-0.01,"gaps":[]}`, false},
 		{"score above one", `{"verdict":"clear","summary":"Clear","ambiguity_score":1.01,"gaps":[]}`, false},
 		{"string score", `{"verdict":"clear","summary":"Clear","ambiguity_score":"0.20","gaps":[]}`, false},
@@ -67,13 +76,13 @@ func TestServiceValidationAndPersistence(t *testing.T) {
 				if err := json.Unmarshal([]byte(tc.raw), &expected); err != nil {
 					t.Fatal(err)
 				}
-				if got.Evaluation.AmbiguityScore != expected.AmbiguityScore || repo.records[0].Evaluation.AmbiguityScore != expected.AmbiguityScore {
+				if !reflect.DeepEqual(got.Evaluation.AmbiguityScore, expected.AmbiguityScore) || !reflect.DeepEqual(repo.records[0].Evaluation.AmbiguityScore, expected.AmbiguityScore) {
 					t.Fatal("ambiguity score lost before response or persistence")
 				}
 				var schema struct {
 					Required   []string `json:"required"`
 					Properties map[string]struct {
-						Type    string   `json:"type"`
+						Type    any      `json:"type"`
 						Minimum *float64 `json:"minimum"`
 						Maximum *float64 `json:"maximum"`
 					} `json:"properties"`
@@ -86,8 +95,8 @@ func TestServiceValidationAndPersistence(t *testing.T) {
 					found = found || key == "ambiguity_score"
 				}
 				field := schema.Properties["ambiguity_score"]
-				if !found || field.Type != "number" || field.Minimum != nil || field.Maximum != nil {
-					t.Fatal("Snowflake schema must require numeric ambiguity_score without unsupported numeric bounds")
+				if !found || !reflect.DeepEqual(field.Type, []any{"number", "null"}) || field.Minimum != nil || field.Maximum != nil {
+					t.Fatal("Snowflake schema must require nullable numeric ambiguity_score without unsupported numeric bounds")
 				}
 				if json.Unmarshal([]byte(client.input), &sent) != nil || len(sent.Conversation) != 1 || sent.Context != request.Context {
 					t.Fatal("context not forwarded")

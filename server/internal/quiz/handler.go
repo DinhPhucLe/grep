@@ -10,20 +10,17 @@ import (
 	"time"
 
 	"cortisol-server/internal/cortex"
-	"cortisol-server/internal/jobs"
 )
 
-type Submitter interface {
-	Submit(context.Context, Request) (Response, error)
+type Generator interface {
+	Generate(context.Context, Request) (Response, error)
 }
 
-func NewHandler(queue Submitter, timeout time.Duration) http.HandlerFunc {
-	return newHandler(queue, timeout, Request.Validate)
+func NewHandler(service Generator, timeout time.Duration) http.HandlerFunc {
+	return newHandler(service.Generate, timeout, Request.Validate)
 }
 
-func newHandler[T, R any](queue interface {
-	Submit(context.Context, T) (R, error)
-}, timeout time.Duration, validate func(T) error) http.HandlerFunc {
+func newHandler[T, R any](process func(context.Context, T) (R, error), timeout time.Duration, validate func(T) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodPost {
@@ -64,21 +61,21 @@ func newHandler[T, R any](queue interface {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
-		response, err := queue.Submit(ctx, input)
+		response, err := process(ctx, input)
 		switch {
 		case errors.Is(err, context.DeadlineExceeded):
 			writeError(w, 504, "quiz_timeout", "quiz request timed out")
 		case errors.Is(err, context.Canceled):
 			return
-		case errors.Is(err, jobs.ErrQueueFull):
-			w.Header().Set("Retry-After", "1")
-			writeError(w, 503, "queue_full", "quiz queue is full")
-		case errors.Is(err, jobs.ErrClosed):
-			writeError(w, 503, "queue_unavailable", "quiz queue is unavailable")
 		case errors.Is(err, cortex.ErrUpstream):
 			writeError(w, 502, "cortex_error", "Cortex could not complete the quiz request")
 		case errors.Is(err, cortex.ErrInvalidResponse):
-			writeError(w, 502, "cortex_invalid_response", "Cortex returned an invalid quiz")
+			message := "Cortex returned an invalid quiz"
+			var invalid *invalidQuizResponse
+			if errors.As(err, &invalid) {
+				message = invalid.Error()
+			}
+			writeError(w, 502, "cortex_invalid_response", message)
 		case err != nil:
 			writeError(w, 500, "quiz_failed", "quiz request could not be completed")
 		default:

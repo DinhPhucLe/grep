@@ -41,7 +41,7 @@ func TestHTTPTraceCorrelationAndNoPayloadLogging(t *testing.T) {
 func TestSeparateRequestIDsAndCancellation(t *testing.T) {
 	var output bytes.Buffer
 	ctx := New(context.Background(), JSONSink(&output))
-	first, second := ForRequest(ctx, "quizzes/next"), ForRequest(ctx, "quiz-answers")
+	first, second := ForRequest(ctx, "evaluations"), ForRequest(ctx, "quizzes")
 	a, b := first.Value(key{}).(trace), second.Value(key{}).(trace)
 	if a.id != b.id || a.request == b.request {
 		t.Fatal("concurrent requests cannot be distinguished")

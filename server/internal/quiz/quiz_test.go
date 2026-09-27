@@ -12,12 +12,11 @@ import (
 
 	"cortisol-server/internal/cortex"
 	"cortisol-server/internal/evaluation"
-	"cortisol-server/internal/jobs"
 )
 
 func exampleRequest() Request {
 	return Request{Input: "fix login", Evaluation: evaluation.Body{
-		Verdict: "ambiguous", Summary: "Failure handling is unspecified", AmbiguityScore: 0.7,
+		Verdict: "ambiguous", Summary: "Failure handling is unspecified", AmbiguityScore: scorePtr(0.7),
 		Gaps: []evaluation.Gap{{Description: "Unknown user behavior", Consequence: "Might reveal account existence"}},
 	}, Files: []File{{Path: "login.go", Content: "package login\n// private implementation\nfunc message() string { return \"Invalid credentials\" }\n"}}}
 }
@@ -44,16 +43,21 @@ func TestRequestValidation(t *testing.T) {
 		name   string
 		change func(*Request)
 	}{
-		{"threshold", func(r *Request) { r.Evaluation.AmbiguityScore = 0.3 }},
+		{"threshold", func(r *Request) { r.Evaluation.AmbiguityScore = scorePtr(0.3) }},
 		{"clear", func(r *Request) { r.Evaluation.Verdict = "clear"; r.Evaluation.Gaps = []evaluation.Gap{} }},
 		{"missing gaps", func(r *Request) { r.Evaluation.Gaps = nil }},
+		{"unrated conversation", func(r *Request) {
+			r.Evaluation.Verdict = "not_applicable"
+			r.Evaluation.AmbiguityScore = nil
+			r.Evaluation.Gaps = []evaluation.Gap{}
+		}},
 		{"no files", func(r *Request) { r.Files = nil }},
 		{"empty file", func(r *Request) { r.Files[0].Content = " " }},
 		{"duplicate files", func(r *Request) { r.Files = append(r.Files, r.Files[0]) }},
 		{"parent path", func(r *Request) { r.Files[0].Path = "../secret" }},
 		{"absolute path", func(r *Request) { r.Files[0].Path = "/tmp/file" }},
-		{"low cap", func(r *Request) { r.MaxQuestions = 3 }},
-		{"high cap", func(r *Request) { r.MaxQuestions = 7 }},
+		{"low cap", func(r *Request) { r.MaxQuestions = -1 }},
+		{"high cap", func(r *Request) { r.MaxQuestions = 5 }},
 		{"file too large", func(r *Request) { r.Files[0].Content = strings.Repeat("x", 128001) }},
 		{"aggregate too large", func(r *Request) {
 			r.Files = []File{{"a", strings.Repeat("x", 128000)}, {"b", strings.Repeat("x", 128000)}}
@@ -68,7 +72,7 @@ func TestRequestValidation(t *testing.T) {
 			}
 		})
 	}
-	for _, cap := range []int{0, 4, 5, 6} {
+	for _, cap := range []int{0, 1, 2, 3, 4} {
 		r := exampleRequest()
 		r.MaxQuestions = cap
 		if err := r.Validate(); err != nil {
@@ -105,7 +109,7 @@ func TestQuestionValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := exampleResult()
-	for n := 2; n <= 7; n++ {
+	for n := 2; n <= 5; n++ {
 		q := exampleResult().Questions[0]
 		q.ID = fmt.Sprintf("q%d", n)
 		q.Topic = q.ID
@@ -113,11 +117,11 @@ func TestQuestionValidation(t *testing.T) {
 		r.Questions = append(r.Questions, q)
 	}
 	if r.Validate(exampleRequest()) == nil {
-		t.Fatal("seven questions accepted")
+		t.Fatal("five questions accepted")
 	}
-	r.Questions = r.Questions[:5]
+	r.Questions = r.Questions[:3]
 	input := exampleRequest()
-	input.MaxQuestions = 4
+	input.MaxQuestions = 2
 	if r.Validate(input) == nil {
 		t.Fatal("caller cap ignored")
 	}
@@ -127,8 +131,6 @@ func TestHTTPGenerationPipeline(t *testing.T) {
 	raw, _ := json.Marshal(exampleResult())
 	client := &fakeCompleter{raw: string(raw)}
 	service := NewService(client, "configured-claude-model")
-	queue := jobs.NewQueue(1, 1, service.Generate)
-	defer queue.Close()
 	input := exampleRequest()
 	input.Context = "Prior requirements"
 	input.Conversation = []evaluation.Message{{Role: "user", Content: "Use generic errors"}}
@@ -136,16 +138,16 @@ func TestHTTPGenerationPipeline(t *testing.T) {
 	req := httptest.NewRequest("POST", "/quizzes", strings.NewReader(string(encoded)))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	NewHandler(queue, time.Second)(w, req)
+	NewHandler(service, time.Second)(w, req)
 	var got Response
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil || len(got.Questions) != 1 || got.Model != "configured-claude-model" || got.PromptVersion != PromptVersion {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	var sent Request
-	if json.Unmarshal([]byte(client.input), &sent) != nil || sent.MaxQuestions != 6 || sent.Files[0].Content != input.Files[0].Content || sent.Conversation[0].Content != input.Conversation[0].Content || sent.Context != input.Context {
+	if json.Unmarshal([]byte(client.input), &sent) != nil || sent.MaxQuestions != 4 || sent.Files[0].Content != "1 | package login\n2 | // private implementation\n3 | func message() string { return \"Invalid credentials\" }" || sent.Conversation[0].Content != input.Conversation[0].Content || sent.Context != input.Context {
 		t.Fatal("Cortex request lost implementation/context")
 	}
-	if client.prompt != systemPrompt || !json.Valid(client.schema) {
+	if client.calls != 1 || client.prompt != systemPrompt || !json.Valid(client.schema) {
 		t.Fatal("quiz prompt/schema not sent")
 	}
 	if strings.Contains(w.Body.String(), "private implementation") || strings.Contains(w.Body.String(), "Invalid credentials") || strings.Contains(w.Body.String(), "fix login") {
@@ -170,9 +172,9 @@ func TestServiceRejectsMalformedOutput(t *testing.T) {
 	}
 }
 
-type submitFunc func(context.Context, Request) (Response, error)
+type generateFunc func(context.Context, Request) (Response, error)
 
-func (f submitFunc) Submit(ctx context.Context, r Request) (Response, error) { return f(ctx, r) }
+func (f generateFunc) Generate(ctx context.Context, r Request) (Response, error) { return f(ctx, r) }
 
 func TestHandlerFailures(t *testing.T) {
 	input, _ := json.Marshal(exampleRequest())
@@ -188,15 +190,13 @@ func TestHandlerFailures(t *testing.T) {
 		{"trailing", "POST", "application/json", string(input) + ` {}`, nil, 400},
 		{"oversize", "POST", "application/json", `{"input":"` + strings.Repeat("x", 1<<20) + `"}`, nil, 413},
 		{"timeout", "POST", "application/json", string(input), context.DeadlineExceeded, 504},
-		{"full", "POST", "application/json", string(input), jobs.ErrQueueFull, 503},
-		{"closed", "POST", "application/json", string(input), jobs.ErrClosed, 503},
 		{"upstream", "POST", "application/json", string(input), cortex.ErrUpstream, 502},
 		{"bad output", "POST", "application/json", string(input), cortex.ErrInvalidResponse, 502},
 		{"internal", "POST", "application/json", string(input), errors.New("private token"), 500},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			called := false
-			handler := NewHandler(submitFunc(func(context.Context, Request) (Response, error) { called = true; return Response{}, tc.err }), time.Second)
+			handler := NewHandler(generateFunc(func(context.Context, Request) (Response, error) { called = true; return Response{}, tc.err }), time.Second)
 			req := httptest.NewRequest(tc.method, "/quizzes", strings.NewReader(tc.body))
 			req.Header.Set("Content-Type", tc.media)
 			w := httptest.NewRecorder()
@@ -205,7 +205,7 @@ func TestHandlerFailures(t *testing.T) {
 				t.Fatalf("%d %s", w.Code, w.Body)
 			}
 			if tc.status < 500 && called {
-				t.Fatal("invalid HTTP input reached queue")
+				t.Fatal("invalid HTTP input reached generation")
 			}
 		})
 	}

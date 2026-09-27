@@ -20,10 +20,11 @@ import (
 func testQuizModel(t *testing.T, server string) *model {
 	t.Helper()
 	m := newModel(nil, t.TempDir(), uiOptions{EvaluationServer: server, NoColor: true, ReducedMotion: true})
+	m.openSource = func(context.Context, string, int) error { return nil }
 	m.connected = true
 	m.threadID = "thread"
 	m.busy = true
-	m.lastEvaluation = &promptEvaluation{NeedsQuiz: true, Record: evaluation.Record{Evaluation: evaluation.Body{Verdict: "ambiguous", Summary: "Behavior unspecified", AmbiguityScore: 0.8, Gaps: []evaluation.Gap{{Description: "fallback", Consequence: "different behavior"}}}}}
+	m.lastEvaluation = &promptEvaluation{NeedsQuiz: true, Record: evaluation.Record{Evaluation: evaluation.Body{Verdict: "ambiguous", Summary: "Behavior unspecified", AmbiguityScore: scorePtr(0.8), Gaps: []evaluation.Gap{{Description: "fallback", Consequence: "different behavior"}}}}}
 	cmd := m.prepareQuiz("fix it")
 	_, send := m.Update(cmd())
 	m.Update(send())
@@ -38,8 +39,7 @@ func twoQuestions() quiz.Result {
 	}}
 }
 
-func TestQuizBatchHTTPFlowAndMasking(t *testing.T) {
-	gradeCalls := 0
+func TestQuizReviewsVisibleImplementationWithoutGrading(t *testing.T) {
 	generationCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -50,17 +50,6 @@ func TestQuizBatchHTTPFlowAndMasking(t *testing.T) {
 				t.Error("generated code not supplied")
 			}
 			json.NewEncoder(w).Encode(quiz.Response{Model: "test", Result: twoQuestions()})
-		case "/quiz-answers":
-			var request quiz.AnswerRequest
-			if json.NewDecoder(r.Body).Decode(&request) != nil || request.Validate() != nil {
-				t.Error("bad answer request")
-			}
-			gradeCalls++
-			if gradeCalls == 1 {
-				w.WriteHeader(503)
-				return
-			}
-			json.NewEncoder(w).Encode(quiz.Grade{Correct: gradeCalls == 4})
 		default:
 			t.Errorf("unexpected API %s", r.URL.Path)
 			w.WriteHeader(404)
@@ -74,33 +63,32 @@ func TestQuizBatchHTTPFlowAndMasking(t *testing.T) {
 	m.Update(event("item/agentMessage/delta", `{"threadId":"thread","turnId":"turn","itemId":"answer","delta":"SECRET_ONE and SECRET_TWO"}`))
 	m.Update(event("item/completed", `{"threadId":"thread","turnId":"turn","item":{"id":"change","type":"fileChange","status":"completed","changes":[{"path":"main.go","kind":{"type":"add"},"diff":"SECRET_ONE"}]}}`))
 	m.refresh()
-	if strings.Contains(m.viewport.View(), "SECRET_") {
-		t.Fatal("stream leaked before quiz")
+	if !strings.Contains(m.viewport.View(), "SECRET_ONE") {
+		t.Fatal("implementation output was hidden before quiz")
 	}
 	_, generate := m.Update(event("turn/completed", `{"threadId":"thread","turn":{"id":"turn","status":"completed"}}`))
 	if generate == nil {
 		t.Fatal("completion did not start generation")
 	}
 	_, followup := m.Update(generate())
-	if followup != nil || len(m.quiz.result.Questions) != 2 {
-		t.Fatal("batch did not terminate generation")
+	if followup == nil || len(m.quiz.result.Questions) != 2 {
+		t.Fatal("response did not terminate generation")
 	}
 	if generationCalls != 1 || m.quiz.phase != "question" {
 		t.Fatal("quiz not ready")
 	}
-	assertHidden := func(one, two bool) {
-		t.Helper()
-		view := quizFileView(m.quiz, "main.go")
-		if strings.Contains(view, "SECRET_ONE") == one || strings.Contains(view, "SECRET_TWO") == two {
-			t.Fatalf("wrong mask: %s", view)
-		}
-		if !strings.Contains(view, "visible helper") {
-			t.Fatal("trivial code hidden")
+	opened := followup()
+	if _, ok := opened.(quizSourceOpenedMsg); !ok {
+		t.Fatal("expected editor launch, not another API call")
+	}
+	m.Update(opened)
+	for _, item := range m.items {
+		if item.kind == "quizCode" {
+			t.Fatal("quiz dumped source into terminal")
 		}
 	}
-	assertHidden(true, true)
 	if strings.Contains(m.quiz.panel.raw, "SECRET_") {
-		t.Fatal("focused question leaked hidden code through context")
+		t.Fatal("question panel should show references, not source")
 	}
 	if strings.Contains(m.quiz.panel.raw, "second case") || !strings.Contains(m.quiz.panel.raw, "main.go:2") {
 		t.Fatal("not focused on first question")
@@ -109,43 +97,29 @@ func TestQuizBatchHTTPFlowAndMasking(t *testing.T) {
 		t.Helper()
 		m.draft.SetValue("my answer")
 		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-		if cmd == nil {
-			t.Fatal("answer not sent")
+		if cmd != nil {
+			t.Fatal("answer triggered external work")
 		}
-		m.Update(cmd())
 	}
-	answer() // API failure is not an attempt.
-	if m.quiz.attempts != 0 || m.quiz.phase != "question" {
-		t.Fatal("API error consumed attempt")
-	}
-	answer()
-	assertHidden(true, true)
-	if m.quiz.attempts != 1 {
-		t.Fatal("first incorrect attempt missing")
-	}
-	answer()
-	assertHidden(false, true)
+	answer() // Answers are recorded locally, with no correctness judgment.
 	if strings.Contains(m.quiz.panel.raw, "SECRET_TWO") {
-		t.Fatal("first reveal leaked the next question's code")
+		t.Fatal("answer panel dumped source")
 	}
 	if m.quiz.phase != "reveal" || m.quiz.index != 0 {
-		t.Fatal("advanced without reveal")
+		t.Fatal("advanced before continuation")
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, openNext := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if openNext == nil {
+		t.Fatal("next question did not open editor")
+	}
+	m.Update(openNext())
 	if m.quiz.index != 1 || m.quiz.phase != "question" || !strings.Contains(m.quiz.panel.raw, "main.go:4") {
 		t.Fatal("next question not focused")
 	}
-	assertHidden(false, true)
 	answer()
-	assertHidden(false, false)
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if m.quizActive() || m.busy {
-		t.Fatal("quiz did not finish")
-	}
-	for _, item := range m.items {
-		if item.withheld {
-			t.Fatal("output not released")
-		}
+	if m.quizActive() || m.busy || generationCalls != 1 {
+		t.Fatal("quiz did not finish locally after a single generation request")
 	}
 }
 
@@ -204,18 +178,15 @@ func TestCollectQuizFilesGitBaselineAndRootBoundary(t *testing.T) {
 	}
 }
 
-func TestFailedQuizStaysMaskedUntilExplicitReveal(t *testing.T) {
+func TestFailedQuizReleasesOutputAndReturnsToChat(t *testing.T) {
 	m := testQuizModel(t, "")
 	m.Update(event("item/agentMessage/delta", `{"threadId":"thread","turnId":"turn","itemId":"a","delta":"PRIVATE_CODE"}`))
 	m.quizFailure(fmt.Errorf("provider failed"))
 	m.refresh()
-	if strings.Contains(m.viewport.View(), "PRIVATE_CODE") {
-		t.Fatal("failure leaked held output")
+	if m.quizActive() || m.busy || !strings.Contains(m.quiz.panel.raw, "provider failed") {
+		t.Fatal("failure did not end the quiz with an explanation")
 	}
-	m.quizEnter("/reveal")
-	for _, item := range m.items {
-		if item.withheld {
-			t.Fatal("explicit reveal failed")
-		}
+	if !strings.Contains(m.viewport.View(), "PRIVATE_CODE") {
+		t.Fatal("failure hid implementation output")
 	}
 }

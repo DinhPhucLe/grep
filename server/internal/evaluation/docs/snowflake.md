@@ -13,10 +13,9 @@ internal/cortex/config.go            Snowflake environment configuration
 internal/cortex/client.go            authenticated Cortex HTTP client
 internal/evaluation/model.go         request, response, and validation rules
 internal/evaluation/prompt.go        versioned clarity rubric and JSON schema
-internal/evaluation/service.go       evaluate, validate, then persist
+internal/evaluation/service.go       classify, validate, persist only numeric evaluations
 internal/evaluation/repository.go    MongoDB evaluations collection
 internal/evaluation/handler.go       HTTP request parsing and error mapping
-internal/jobs/queue.go               bounded, typed worker queue
 internal/db/migrations/000004_*      evaluations schema and timestamp index
 internal/evaluation/examples/evaluation.json  runnable request payload
 ```
@@ -25,7 +24,7 @@ The evaluation contract implements the prompt-clarity step from `CONTEXT.md`.
 It considers prior conversation and supplied repository context. It does not
 assign points, generate quizzes, grade answers, or run Codex. Those product
 contracts remain separate work. The model's judgment is not a validated measure
-of user understanding. The TUI is not yet connected to this endpoint.
+of user understanding. The TUI calls this endpoint before forwarding messages to Codex.
 
 ## 1. Configure Snowflake
 
@@ -83,16 +82,14 @@ HTTP_ADDR=127.0.0.1:8080
 ```
 
 All three Snowflake variables are required. `EVALUATION_TIMEOUT` defaults to
-60 seconds and accepts positive Go durations up to 5 minutes. It covers queue
-waiting, inference, and storage. The model receives at most 4096 output tokens.
+60 seconds and accepts positive Go durations up to 5 minutes. It covers inference and storage. The model receives at most 4096 output tokens.
 The server validates configuration at startup, but credentials and model access
 are only verified by a real evaluation call.
 
-The server binds to loopback by default. This development API has no caller
-authentication. Before setting `HTTP_ADDR=:8080` for remote access, put it behind
-an authenticated gateway with per-user rate limits: calls spend Snowflake credits
-and the payload may contain source code. Tokens stay in the backend and are never
-sent to a browser or logged. Input, context, and conversation ARE stored in MongoDB;
+The server binds to loopback by default. The local API requires no application
+login or session token. Calls spend Snowflake credits and the payload may contain
+source code; keep this development API on loopback.
+Snowflake provider tokens stay in the backend and are never sent to a browser or logged. Input, context, and conversation ARE stored in MongoDB;
 apply your application's retention/access rules to the evaluations collection.
 
 ## 3. Apply migrations and start
@@ -138,7 +135,7 @@ A successful call returns HTTP **201**. Example (the judgment varies by input/mo
   "id": "66f600000000000000000001",
   "created_at": "2026-09-26T20:00:00Z",
   "model": "claude-sonnet-4-6",
-  "rubric_version": "prompt-clarity-v1",
+  "rubric_version": "implementation-intent-v2",
   "evaluation": {
     "verdict": "ambiguous",
     "summary": "The affected login behavior is unspecified.",
@@ -153,13 +150,26 @@ A successful call returns HTTP **201**. Example (the judgment varies by input/mo
 }
 ```
 
-`clear` requires an empty gaps array; `ambiguous` requires 1–10 complete gaps.
-The original payload is persisted but omitted from the HTTP response. A successful
-response is sent only after MongoDB acknowledges the insert. There is no retrieval
+The evaluator classifies intent before scoring. Non-implementation messages such
+as confirmations, explanations, option selections, and status checks return:
+
+```json
+{"verdict":"not_applicable","summary":"Confirmation of an existing plan","ambiguity_score":null,"gaps":[]}
+```
+
+The score field is required even when null. Numeric scores apply only to explicit
+implementation/build/change requests. `clear` requires a score at or below 0.30
+and no gaps; `ambiguous` requires a score above 0.30 and 1–10 client-facing gaps.
+A null score is accepted only with `not_applicable` and no gaps. The TUI sends
+unrated messages directly to Codex without an evaluation card or quiz.
+Unrated results return HTTP 200 without a database ID or storage operation.
+Numeric evaluations are saved and return HTTP 201 with their ID. No database
+migration is required for this distinction.
+For numeric evaluations, the original payload is persisted but omitted from the
+HTTP response, which is sent only after MongoDB acknowledges the insert. There is no retrieval
 endpoint yet; the returned ID identifies the MongoDB record.
 
-`POST /jobs` is an alias with the same request/response contract. It replaces the
-old demo uppercase response; clients expecting `{"output":"..."}` must update.
+Only `POST /evaluations` is supported; the legacy `/jobs` test alias is removed.
 
 ## Errors and operating behavior
 
@@ -172,12 +182,10 @@ Errors have the shape `{"error":{"code":"...","message":"..."}}`:
 | 413 | HTTP body exceeds 1 MiB |
 | 415 | Content-Type must be application/json |
 | 502 | Cortex transport/permissions (`cortex_error`), invalid model output (`cortex_invalid_response`), or network-policy auth failure |
-| 503 | Queue full (`queue_full`, retry later) or queue closed (`queue_unavailable`) |
 | 504 | Evaluation deadline exceeded |
 | 500 | Evaluation could not be saved or another internal error |
 
-There are four workers and 100 waiting slots. Calls wait synchronously; queue
-contents do not survive restarts. Cancellation is propagated to Cortex and MongoDB.
+Calls execute directly without a worker queue. Cancellation is propagated to Cortex and MongoDB.
 No automatic retries are made, since a repeated inference can incur another charge.
 Client retries may create duplicate records, and a disconnect after storage may
 leave a saved evaluation the client did not receive. There is no idempotency key yet.
@@ -192,7 +200,7 @@ can reveal the provider's specific error without exposing it through this API.
 
 ```sh
 go test ./...
-go test -race ./internal/cortex ./internal/evaluation ./internal/jobs
+go test -race ./internal/cortex ./internal/evaluation
 ```
 
 Tests use a local TLS Cortex stub and an in-memory repository; they do not spend
