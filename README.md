@@ -2,6 +2,14 @@
   <img src="docs/assets/grep-cover.png" alt="Grep — The intelligent layer for organizations." width="100%">
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-00ADD8?style=flat&amp;logo=go&amp;logoColor=white" alt="Go">
+  <img src="https://img.shields.io/badge/React-20232A?style=flat&amp;logo=react&amp;logoColor=61DAFB" alt="React">
+  <img src="https://img.shields.io/badge/MongoDB-47A248?style=flat&amp;logo=mongodb&amp;logoColor=white" alt="MongoDB">
+  <img src="https://img.shields.io/badge/AWS-232F3E?style=flat&amp;logo=amazonwebservices&amp;logoColor=white" alt="AWS">
+  <img src="https://img.shields.io/badge/Snowflake_Cortex-29B5E8?style=flat&amp;logo=snowflake&amp;logoColor=white" alt="Snowflake Cortex">
+</p>
+
 ---
 
 **Your team’s knowledge. Where you code.**
