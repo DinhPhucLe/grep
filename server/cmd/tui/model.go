@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"cortisol-server/mascot"
-
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -47,11 +45,6 @@ type model struct {
 	clipboardNotice, quitDraft                string
 	quitMode                                  bool
 	pendingPastes                             int
-	mascotOn                                  bool
-	mascot                                    *mascot.Cat
-	mascotBounds                              mascot.Bounds
-	mascotClickAt                             time.Time
-	mascotClickX, mascotClickY                int
 }
 type frameMsg time.Time
 type terminalSizeMsg struct{ width, height int }
@@ -75,7 +68,7 @@ func newModel(c *appServer, cwd string, o uiOptions) *model {
 	if o.ReducedMotion {
 		d.Cursor.SetMode(cursor.CursorStatic)
 	}
-	m := &model{client: c, ctx: context.Background(), opts: o, workspace: cwd, status: "Connecting", width: 80, height: 24, draft: d, viewport: viewport.New(80, 16), follow: true, focus: -1, byID: map[string]*conversationItem{}, seenRequests: map[string]bool{}, mascotOn: true, mascot: mascot.NewCat(time.Now().UnixNano())}
+	m := &model{client: c, ctx: context.Background(), opts: o, workspace: cwd, status: "Connecting", width: 80, height: 24, draft: d, viewport: viewport.New(80, 16), follow: true, focus: -1, byID: map[string]*conversationItem{}, seenRequests: map[string]bool{}}
 	m.clipboard = systemClipboard{}
 	m.resize()
 	return m
@@ -204,10 +197,6 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case frameMsg:
 		m.frame++
-		if m.mascotOn && m.mascot != nil && !m.opts.ReducedMotion {
-			m.mascot.Tick()
-			m.dirty = true
-		}
 		if m.busy && !m.opts.ReducedMotion && m.frame%15 == 0 {
 			m.dirty = true
 		}
@@ -227,9 +216,7 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.mascotMouse(v) {
-			return m, nil
-		}
+
 		if len(m.requests) > 0 {
 			m.requestMouse(v)
 			return m, nil
