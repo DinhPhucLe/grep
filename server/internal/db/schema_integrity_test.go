@@ -26,10 +26,13 @@ func TestSchemaIntegrityErrorMessage(t *testing.T) {
 		t.Fatal("expected error")
 	}
 	msg := err.Error()
-	for _, part := range []string{"organizations", "version 5", "force", "4"} {
+	for _, part := range []string{"organizations", "version 5", "reconcile"} {
 		if !strings.Contains(msg, part) {
 			t.Fatalf("missing %q in %s", part, msg)
 		}
+	}
+	if strings.Contains(msg, "force schema_migrations") {
+		t.Fatal("must not recommend forcing migration ledger")
 	}
 	if SchemaIntegrityError(5, nil) != nil {
 		t.Fatal("empty missing should be nil")

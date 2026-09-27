@@ -62,7 +62,7 @@ func Seed(ctx context.Context, database *mongo.Database) (SeedResult, error) {
 	}
 	for _, record := range demoRecords() {
 		if !collections[record.collection] {
-			return result, fmt.Errorf("required collection %s is missing; migration version claims %d but schema objects are incomplete — force schema_migrations.version back to %d (dirty=false), re-run go run ./cmd/migrate, then seed again", record.collection, migration.Version, migration.Version-1)
+			return result, fmt.Errorf("required collection %s is missing; migration version claims %d but schema objects are incomplete; reconcile deployed schema and migration history before repairing or seeding; do not automatically force or reset the migration ledger", record.collection, migration.Version)
 		}
 	}
 

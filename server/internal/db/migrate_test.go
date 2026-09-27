@@ -3,6 +3,7 @@ package db
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -10,6 +11,26 @@ import (
 func TestCheckProjectMigrations(t *testing.T) {
 	if err := CheckMigrations("migrations"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCheckMigrationsDuplicateVersions(t *testing.T) {
+	for _, suffix := range []string{"up", "down"} {
+		t.Run(suffix, func(t *testing.T) {
+			dir := t.TempDir()
+			names := []string{"000001_a.up.json", "000001_a.down.json", "000001_b." + suffix + ".json"}
+			if suffix == "up" {
+				names = append(names, "000001_b.down.json")
+			}
+			for _, name := range names {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(`[{"create":"test"}]`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := CheckMigrations(dir); err == nil || !strings.Contains(err.Error(), "duplicate migration file") {
+				t.Fatalf("expected duplicate migration error, got %v", err)
+			}
+		})
 	}
 }
 
