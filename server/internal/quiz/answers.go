@@ -71,6 +71,12 @@ type AnswerReceipt struct {
 type userLookup interface {
 	Exists(context.Context, string) (bool, error)
 }
+
+// AnswerProjection materializes dashboard data from a durable answer.
+// SyncAnswer must be idempotent: saves and retries can call it repeatedly.
+type AnswerProjection interface {
+	SyncAnswer(context.Context, AnswerRecord) error
+}
 type quizSnapshot struct {
 	request  Request
 	response Response
@@ -80,18 +86,23 @@ type quizSnapshot struct {
 // AnswerStore keeps short-lived, server-authoritative quiz context. Durable
 // answers remain idempotently retryable when a quiz expires or the server restarts.
 type AnswerStore struct {
-	repo      AnswerRepository
-	users     userLookup
-	generator Generator
-	mu        sync.Mutex
-	quizzes   map[string]quizSnapshot
-	pending   int
-	capacity  int
-	now       func() time.Time
+	repo       AnswerRepository
+	users      userLookup
+	generator  Generator
+	mu         sync.Mutex
+	quizzes    map[string]quizSnapshot
+	pending    int
+	capacity   int
+	now        func() time.Time
+	projection AnswerProjection
 }
 
-func NewAnswerStore(repo AnswerRepository, users userLookup, generator Generator) *AnswerStore {
-	return &AnswerStore{repo: repo, users: users, generator: generator, quizzes: make(map[string]quizSnapshot), capacity: 128, now: time.Now}
+func NewAnswerStore(repo AnswerRepository, users userLookup, generator Generator, projections ...AnswerProjection) *AnswerStore {
+	s := &AnswerStore{repo: repo, users: users, generator: generator, quizzes: make(map[string]quizSnapshot), capacity: 128, now: time.Now}
+	if len(projections) > 0 {
+		s.projection = projections[0]
+	}
+	return s
 }
 func validateQuizMetadata(r Request) error {
 	if r.UserID == "" && r.ThreadID == "" && r.TurnID == "" {
@@ -192,6 +203,22 @@ func sameAnswer(record AnswerRecord, input AnswerRequest) (AnswerReceipt, error)
 	}
 	return answerReceipt(record), nil
 }
+
+func (s *AnswerStore) projectAnswer(ctx context.Context, record AnswerRecord) (AnswerReceipt, error) {
+	if s.projection != nil {
+		if err := s.projection.SyncAnswer(ctx, record); err != nil {
+			return AnswerReceipt{}, err
+		}
+	}
+	return answerReceipt(record), nil
+}
+
+func (s *AnswerStore) retryAnswer(ctx context.Context, record AnswerRecord, input AnswerRequest) (AnswerReceipt, error) {
+	if _, err := sameAnswer(record, input); err != nil {
+		return AnswerReceipt{}, err
+	}
+	return s.projectAnswer(ctx, record)
+}
 func (s *AnswerStore) Submit(ctx context.Context, input AnswerRequest) (AnswerReceipt, error) {
 	if err := input.Validate(); err != nil {
 		return AnswerReceipt{}, err
@@ -201,7 +228,7 @@ func (s *AnswerStore) Submit(ctx context.Context, input AnswerRequest) (AnswerRe
 	}
 	existing, err := s.repo.Find(ctx, input.UserID, input.QuizID, input.QuestionID)
 	if err == nil {
-		return sameAnswer(existing, input)
+		return s.retryAnswer(ctx, existing, input)
 	}
 	if !errors.Is(err, ErrAnswerNotFound) {
 		return AnswerReceipt{}, err
@@ -235,12 +262,12 @@ func (s *AnswerStore) Submit(ctx context.Context, input AnswerRequest) (AnswerRe
 		if findErr != nil {
 			return AnswerReceipt{}, fmt.Errorf("read concurrent answer: %w", findErr)
 		}
-		return sameAnswer(existing, input)
+		return s.retryAnswer(ctx, existing, input)
 	}
 	if err != nil {
 		return AnswerReceipt{}, err
 	}
-	return answerReceipt(record), nil
+	return s.projectAnswer(ctx, record)
 }
 func NewAnswerHandler(store *AnswerStore, timeout time.Duration) http.HandlerFunc {
 	return newHandler(store.Submit, timeout, AnswerRequest.Validate)

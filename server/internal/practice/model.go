@@ -2,6 +2,7 @@ package practice
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -12,10 +13,15 @@ const (
 	PracticeLeadAndReveal = "lead_and_reveal"
 	OutcomeCorrect        = "correct"
 	OutcomeFailedReveal   = "failed_reveal"
+	SourceQuizAnswer      = "quiz_answers"
 )
 
-// Event is one completed practice instance (whole quiz for a harness technique).
+// Event is one practice instance. Quiz-answer events represent one saved question.
 type Event struct {
+	Source             string        `json:"source,omitempty" bson:"source,omitempty"`
+	QuizID             bson.ObjectID `json:"quiz_id,omitempty" bson:"quiz_id,omitempty"`
+	QuestionID         string        `json:"question_id,omitempty" bson:"question_id,omitempty"`
+	Grade              *float64      `json:"grade,omitempty" bson:"grade,omitempty"`
 	ID                 bson.ObjectID `json:"id" bson:"_id"`
 	Practice           string        `json:"practice" bson:"practice"`
 	OrganizationID     bson.ObjectID `json:"organization_id" bson:"organization_id"`
@@ -42,6 +48,18 @@ type Event struct {
 func (e Event) Validate() error {
 	if e.Practice != PracticeLeadAndReveal {
 		return errors.New("practice must be lead_and_reveal")
+	}
+	if e.Source == SourceQuizAnswer {
+		if e.ID.IsZero() || e.UserID.IsZero() || e.QuizID.IsZero() || e.QuestionID == "" || e.StartedAt.IsZero() || !e.EndedAt.Equal(e.StartedAt) {
+			return errors.New("quiz answer identity and submission timestamp are required")
+		}
+		if e.Grade == nil || math.IsNaN(*e.Grade) || math.IsInf(*e.Grade, 0) || *e.Grade < 0 || *e.Grade > 1 {
+			return errors.New("quiz answer grade must be between 0 and 1")
+		}
+		if (*e.Grade == 1 && e.Outcome != OutcomeCorrect) || (*e.Grade < 1 && e.Outcome != OutcomeFailedReveal) {
+			return errors.New("quiz answer outcome must match grade")
+		}
+		return nil
 	}
 	if e.OrganizationID.IsZero() || e.UserID.IsZero() || e.SessionID.IsZero() || e.ProjectID.IsZero() {
 		return errors.New("organization_id, user_id, session_id, and project_id are required")

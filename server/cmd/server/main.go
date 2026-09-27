@@ -77,7 +77,8 @@ func run() error {
 	handler := evaluation.NewHandler(service, cortexConfig.Timeout)
 	quizService := quiz.NewService(cortexClient, cortexConfig.Model)
 	users := user.NewMongoRepository(database)
-	answers := quiz.NewAnswerStore(quiz.NewMongoAnswerRepository(database), users, quizService)
+	answers := quiz.NewAnswerStore(quiz.NewMongoAnswerRepository(database), users, quizService,
+		practice.NewQuizAnswerProjector(database, authConfig.DefaultOrgID))
 	registerRoutes(mux, handler,
 		quiz.NewHandler(answers, cortexConfig.Timeout),
 		quiz.NewAnswerHandler(answers, 10*time.Second))

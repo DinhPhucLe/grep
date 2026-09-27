@@ -68,6 +68,40 @@ quiz snapshot to add `quiz_question`, the original `prompt`, and `created_at`.
 The record also retains `quiz_id` and `question_id` for unique submissions. Identical retries return the existing receipt;
 conflicting answers or grades return 409. No grade API or batching is used.
 
+Each saved question also creates one `practice_events` record for the dashboard.
+The event reuses the answer's `_id` and retains its `user_id`, `quiz_id`,
+`question_id`, numeric grade, and submission time. A grade of 1 maps to `correct`;
+lower grades map to `failed_reveal`. Retries reuse the same event. If projection
+fails after the answer was saved, retrying the answer repairs the missing event.
+The configured login organization is used only when the user is a member;
+otherwise a sole membership is used, or organization is left unknown.
+Organization attribution is captured when the event is first inserted.
+
+Quiz-answer events have no measured duration, project, or code-location data.
+They contribute to activity, outcome counts, and organization time series, but
+not timing medians or codebase heatmaps. Existing practice events remain intact.
+
+Migration 14 preserves the existing practice-event schema and adds a separate
+quiz-answer variant. Apply it before running the updated API or backfill. The
+down migration restores the old validator without deleting projected events;
+quiz-answer writes require migration 14 to be reapplied.
+
+Backfill existing graded answers from `server/`:
+
+```sh
+go run ./cmd/migrate                          # includes migration 14
+go run ./cmd/backfill-practice                 # validate/count only
+go run ./cmd/backfill-practice -apply          # idempotent backfill for all users
+go run ./cmd/backfill-practice -apply -user-id <ObjectID>  # one user
+```
+
+An opt-in integration check projects only a selected user's existing answers and
+verifies concurrent retries, repeated backfill, and dashboard aggregation:
+
+```sh
+CORTISOL_VERIFY_PRACTICE_USER=<ObjectID> go test ./internal/practice -run TestLiveQuizAnswerProjection -v -count=1
+```
+
 Migration 8 created `quiz_answers` and its indexes. Migration 9 changes the
 validator for the concise graded record; it was applied with approval. Existing
 ungraded records remain untouched. Runtime code does not create collections or

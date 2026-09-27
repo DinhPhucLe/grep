@@ -95,10 +95,10 @@ type CodebaseTreemap struct {
 }
 
 type TimeseriesPoint struct {
-	T                         string `json:"t"`
-	Correct                   int    `json:"correct"`
-	FailedReveal              int    `json:"failedReveal"`
-	MedianActiveAnswerTimeMs  *int64 `json:"medianActiveAnswerTimeMs"`
+	T                        string `json:"t"`
+	Correct                  int    `json:"correct"`
+	FailedReveal             int    `json:"failedReveal"`
+	MedianActiveAnswerTimeMs *int64 `json:"medianActiveAnswerTimeMs"`
 }
 
 type Timeseries struct {
@@ -136,7 +136,9 @@ func BuildEmployeeView(subject EmployeeSubject, events []Event) EmployeePractice
 	for _, e := range events {
 		day := e.StartedAt.UTC().Format("2006-01-02")
 		counts[day]++
-		actives = append(actives, e.ActiveAnswerTimeMs)
+		if e.Source != SourceQuizAnswer {
+			actives = append(actives, e.ActiveAnswerTimeMs)
+		}
 		switch e.Outcome {
 		case OutcomeCorrect:
 			correct++
@@ -178,6 +180,10 @@ func BuildEmployeeView(subject EmployeeSubject, events []Event) EmployeePractice
 		statMetric("correct_count", "descriptive", "Correct outcomes", strconv.Itoa(correct)),
 		statMetric("failed_reveal_count", "descriptive", "Failed reveal outcomes", strconv.Itoa(failed)),
 	}
+	if len(actives) == 0 {
+		view.Metrics[1].Status = "unknown"
+		view.Metrics[1].Display.Primary = "—"
+	}
 	view.Summary = &Summary{
 		Status:  "available",
 		Bullets: []string{fmt.Sprintf("%d %s practice instances in %d", len(events), subject.Practice, subject.Year)},
@@ -204,6 +210,9 @@ func BuildOrgView(subject OrgSubject, events []Event) OrgPracticeView {
 	}
 	repos := map[repoKey]map[string]map[string]int{}
 	for _, e := range events {
+		if e.Source == SourceQuizAnswer {
+			continue // Saved answers do not contain codebase or line metadata.
+		}
 		key := repoKey{projectID: e.ProjectID.Hex(), repoName: e.RepoName}
 		if repos[key] == nil {
 			repos[key] = map[string]map[string]int{}
@@ -272,12 +281,16 @@ func BuildOrgView(subject OrgSubject, events []Event) OrgPracticeView {
 		case OutcomeFailedReveal:
 			p.FailedReveal++
 		}
-		activesByDay[day] = append(activesByDay[day], e.ActiveAnswerTimeMs)
+		if e.Source != SourceQuizAnswer {
+			activesByDay[day] = append(activesByDay[day], e.ActiveAnswerTimeMs)
+		}
 	}
 	points := make([]TimeseriesPoint, 0, len(byDay))
 	for day, p := range byDay {
-		median := medianInt64(activesByDay[day])
-		p.MedianActiveAnswerTimeMs = &median
+		if len(activesByDay[day]) > 0 {
+			median := medianInt64(activesByDay[day])
+			p.MedianActiveAnswerTimeMs = &median
+		}
 		points = append(points, *p)
 	}
 	sort.Slice(points, func(i, j int) bool { return points[i].T < points[j].T })

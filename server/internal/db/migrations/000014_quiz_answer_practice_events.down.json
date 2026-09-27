@@ -1,0 +1,114 @@
+[
+  {
+    "collMod": "practice_events",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+          "_id",
+          "practice",
+          "organization_id",
+          "user_id",
+          "session_id",
+          "project_id",
+          "started_at",
+          "ended_at",
+          "total_duration_ms",
+          "active_answer_time_ms",
+          "attempts",
+          "outcome",
+          "points_delta",
+          "repo_name",
+          "repo_org",
+          "file_path",
+          "module",
+          "start_line",
+          "end_line"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "_id": {
+            "bsonType": "objectId"
+          },
+          "practice": {
+            "bsonType": "string"
+          },
+          "organization_id": {
+            "bsonType": "objectId"
+          },
+          "user_id": {
+            "bsonType": "objectId"
+          },
+          "session_id": {
+            "bsonType": "objectId"
+          },
+          "project_id": {
+            "bsonType": "objectId"
+          },
+          "started_at": {
+            "bsonType": "date"
+          },
+          "ended_at": {
+            "bsonType": "date"
+          },
+          "total_duration_ms": {
+            "bsonType": [
+              "long",
+              "int"
+            ]
+          },
+          "active_answer_time_ms": {
+            "bsonType": [
+              "long",
+              "int"
+            ]
+          },
+          "attempts": {
+            "bsonType": "int"
+          },
+          "outcome": {
+            "bsonType": "string"
+          },
+          "points_delta": {
+            "bsonType": [
+              "int",
+              "null"
+            ]
+          },
+          "repo_name": {
+            "bsonType": "string"
+          },
+          "repo_org": {
+            "bsonType": "string"
+          },
+          "file_path": {
+            "bsonType": "string"
+          },
+          "module": {
+            "bsonType": "string"
+          },
+          "start_line": {
+            "bsonType": "int"
+          },
+          "end_line": {
+            "bsonType": "int"
+          },
+          "answer_quality": {
+            "bsonType": [
+              "string",
+              "null"
+            ]
+          },
+          "relevance": {
+            "bsonType": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "validationLevel": "strict",
+    "validationAction": "error"
+  }
+]
