@@ -9,7 +9,7 @@ import (
 )
 
 func TestKnowledgeMigration(t *testing.T) {
-	data, err := os.ReadFile("migrations/000007_knowledge_records.up.json")
+	data, err := os.ReadFile("migrations/000011_knowledge_records.up.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestKnowledgeMigration(t *testing.T) {
 	if index.CreateIndexes != "knowledge_records" || len(index.Indexes) != 1 || !reflect.DeepEqual(index.Indexes[0].Key, map[string]int{"project_id": 1, "created_at": -1, "_id": -1}) || index.Indexes[0].Unique {
 		t.Fatal("missing project ordering index")
 	}
-	down, err := os.ReadFile("migrations/000007_knowledge_records.down.json")
+	down, err := os.ReadFile("migrations/000011_knowledge_records.down.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,10 +70,10 @@ func TestKnowledgeMigration(t *testing.T) {
 	if !reflect.DeepEqual(drops, []map[string]string{{"drop": "knowledge_records"}}) {
 		t.Fatal("rollback affects existing collections")
 	}
-	// Check this pair independently of the pre-existing duplicate version 5.
+	// Check this pair independently of other migrations.
 	dir := t.TempDir()
 	for suffix, contents := range map[string][]byte{"up": data, "down": down} {
-		if err := os.WriteFile(filepath.Join(dir, "000007_knowledge_records."+suffix+".json"), contents, 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "000011_knowledge_records."+suffix+".json"), contents, 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -82,15 +82,15 @@ func TestKnowledgeMigration(t *testing.T) {
 	}
 }
 
-func TestKnowledgeRequiredFromVersion7(t *testing.T) {
+func TestKnowledgeRequiredFromVersion11(t *testing.T) {
 	old := []string{"users", "projects", "sessions", "evaluations", "organizations", "organization_members", "practice_events"}
-	if got := MissingCollectionsForVersion(6, old); len(got) != 0 {
+	if got := MissingCollectionsForVersion(10, old); len(got) != 0 {
 		t.Fatalf("old baseline broken: %v", got)
 	}
-	if got := MissingCollectionsForVersion(7, old); !reflect.DeepEqual(got, []string{"knowledge_records"}) {
+	if got := MissingCollectionsForVersion(11, old); !reflect.DeepEqual(got, []string{"knowledge_records"}) {
 		t.Fatalf("new collection not required: %v", got)
 	}
-	if got := MissingCollectionsForVersion(7, append(old, "knowledge_records")); len(got) != 0 {
+	if got := MissingCollectionsForVersion(11, append(old, "knowledge_records")); len(got) != 0 {
 		t.Fatal(got)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"cortisol-server/internal/db"
 	"cortisol-server/internal/evaluation"
 	"cortisol-server/internal/health"
+	"cortisol-server/internal/orgknowledge"
 	"cortisol-server/internal/practice"
 	"cortisol-server/internal/quiz"
 	"cortisol-server/internal/timing"
@@ -80,6 +81,7 @@ func run() error {
 	)
 	mux.Handle("/api/v1/practice-events", practice.NewIngestHandler(practiceService))
 	mux.Handle("/api/v1/dashboard/", practice.NewDashboardHandler(practiceService))
+	mux.Handle("/api/v1/knowledge", orgknowledge.NewHandler(orgknowledge.NewMongoStore(database)))
 
 	address := os.Getenv("HTTP_ADDR")
 	if address == "" {

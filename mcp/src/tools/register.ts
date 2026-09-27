@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { httpKnowledgePost, httpKnowledgeSearch } from '../http/knowledge.js';
 import { mockKnowledgePost, mockKnowledgeSearch } from '../mocks/knowledge.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
@@ -7,6 +8,17 @@ function asText(payload: unknown) {
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
   };
+}
+
+function backendConfig() {
+  return {
+    apiBase: process.env.CORTISOL_API_BASE?.trim() || 'http://127.0.0.1:8080',
+    orgId: process.env.CORTISOL_ORG_ID?.trim() || 'demo-org',
+  };
+}
+
+function useHttpBackend(): boolean {
+  return (process.env.MCP_BACKEND?.trim() || 'mock') === 'http';
 }
 
 const QUACK_MESSAGE = 'this mcp tool work quack quack quack';
@@ -34,10 +46,23 @@ export function registerTools(server: McpServer): void {
     'knowledge_search',
     {
       title: 'Search org knowledge',
-      description:
-        'Return the top-k semantically similar knowledge documents for a query (natural language or code snippet). Mock backend until the Go knowledge API is wired. Default k is 5. For Slack messages/files use the official Slack MCP server, not this tool.',
+      description: [
+        'Search the organization shared knowledge base: attributed teammate notes, gotchas, runbooks, design decisions, and code-locus tips that live outside any one repository.',
+        'Call this tool proactively whenever any of these apply (the user does not need to name the tool, say MCP, or say “skill”):',
+        '(1) they ask to search the knowledge base/database/org memory;',
+        '(2) they want org, team, or company-specific guidance (“how do we…”, “who handled…”, “what’s our convention for…”);',
+        '(3) they say the answer is probably not in this codebase, or ask to look outside the repo/codebase/files;',
+        '(4) they are stuck on an internal pattern, service, retry/auth/webhook rule, or failure mode another engineer may already have documented.',
+        'Prefer this before guessing org-specific behavior or searching only local files when the question is about shared team knowledge.',
+        'Pass a natural-language question or a short code/error snippet as query. Returns top-k matches (default 5) with authors and optional scores.',
+        'Do not use for general internet facts or public docs. Do not use for Slack history (use Slack MCP). Do not use to write knowledge (use knowledge_post).',
+      ].join(' '),
       inputSchema: {
-        query: z.string().describe('Search query: keywords, question, or code snippet'),
+        query: z
+          .string()
+          .describe(
+            'What you need from org memory: a concrete question, symptom, or code/error snippet (e.g. "payment 429 retries", "Stripe webhook HMAC").',
+          ),
         k: z.number().int().min(1).max(50).optional().describe('Max results (default 5)'),
         topics: z.array(z.string()).optional().describe('Filter by topic tags'),
         author: z.string().optional().describe('Filter by author userId or name substring'),
@@ -49,17 +74,29 @@ export function registerTools(server: McpServer): void {
           .describe('Exact-match property filters (repo, module, file_path, language, ...)'),
       },
     },
-    async (args) => asText(mockKnowledgeSearch(args)),
+    async (args) => {
+      if (useHttpBackend()) {
+        return asText(await httpKnowledgeSearch(args, backendConfig()));
+      }
+      return asText(mockKnowledgeSearch(args));
+    },
   );
 
   server.registerTool(
     'knowledge_post',
     {
       title: 'Post knowledge document',
-      description:
-        'Create a knowledge document in the org knowledge base (mock in-memory store). Fields match the shared knowledge contract. To post into Slack channels use the official Slack MCP server.',
+      description: [
+        'Write a durable knowledge card into the organization shared knowledge base so teammates can find it later via knowledge_search.',
+        'Call this when the user (or a verified practice outcome) produced a reusable insight: a gotcha, fix, convention, or decision worth attributing.',
+        'Include clear content, topic tags, and optional repo/module/file_path properties. Prefer posting only durable, non-secret guidance.',
+        'Do not use for transient chat, secrets, or posting to Slack channels (use Slack MCP for Slack).',
+      ].join(' '),
       inputSchema: {
-        content: z.string().min(1).describe('Knowledge body / article content'),
+        content: z
+          .string()
+          .min(1)
+          .describe('Self-contained knowledge body: the insight, rule, or fix (not a chat transcript)'),
         topics: z.array(z.string()).min(1).describe('Logical topic categories'),
         properties: z
           .record(z.string(), z.string())
@@ -76,6 +113,11 @@ export function registerTools(server: McpServer): void {
           .describe('People involved with this article'),
       },
     },
-    async (args) => asText(mockKnowledgePost(args)),
+    async (args) => {
+      if (useHttpBackend()) {
+        return asText(await httpKnowledgePost(args, backendConfig()));
+      }
+      return asText(mockKnowledgePost(args));
+    },
   );
 }

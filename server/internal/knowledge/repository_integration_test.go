@@ -54,7 +54,7 @@ func TestMongoRepositoryIntegration(t *testing.T) {
 			t.Errorf("drop disposable database: %v", err)
 		}
 	}()
-	data, err := os.ReadFile("../db/migrations/000007_knowledge_records.up.json")
+	data, err := os.ReadFile("../db/migrations/000011_knowledge_records.up.json")
 	if err != nil {
 		t.Fatal(err)
 	}

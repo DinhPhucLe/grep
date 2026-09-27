@@ -166,6 +166,52 @@ One event = one completed practice **instance** (whole quiz), not one LLM questi
 
 ---
 
+## Org knowledge API
+
+Prefix: `/api/v1/knowledge`. CamelCase JSON aligned with [`mcp/contracts/knowledge.ts`](mcp/contracts/knowledge.ts).
+Semantic search uses Atlas Automated Embedding (`voyage-code-4`) on `knowledge_documents.content`.
+
+### Search
+
+`GET /api/v1/knowledge`
+
+| Query | Type | Required | Notes |
+|-------|------|----------|--------|
+| `organizationId` | string | yes | Org scope filter |
+| `query` | string | no | Natural language or code snippet |
+| `k` | int | no | Default **5**, max 50 |
+| `topics` | string (repeatable) | no | Topic filter |
+| `author` | string | no | userId or name substring |
+| `from` / `to` | RFC3339 | no | `createdAt` bounds |
+| `prop.*` | string | no | Exact property match (e.g. `prop.repo=novapay/api`) |
+
+**200**
+
+```json
+{ "items": [ /* KnowledgeDocument */ ], "scores": [0.91] }
+```
+
+**400** — missing `organizationId` or invalid `k` / dates.  
+**500** — `search_failed`.
+
+### Post
+
+`POST /api/v1/knowledge`  
+`Content-Type: application/json`
+
+| Field | Type | Required |
+|-------|------|----------|
+| `content` | string | yes |
+| `topics` | string[] | yes (non-empty) |
+| `organizationId` | string | yes |
+| `authors` | `{ userId, name? }[]` | yes (at least one `userId`) |
+| `properties` | map | no |
+
+**201** — created document (includes `id`, timestamps).  
+**400** — `invalid_request`.
+
+---
+
 ## MongoDB schema
 
 Migrations live in `server/internal/db/migrations/` as paired  
@@ -297,7 +343,7 @@ dimension count. No embedding provider is selected or called.
 
 This is storage scaffolding only: no public endpoint, TUI capture, embedding
 generation, semantic search, revision tracking, or indexing worker is wired in.
-Migration `000007_knowledge_records` creates just this collection and an ordinary
+Migration `000011_knowledge_records` creates just this collection and an ordinary
 project/date/ID index. Its down migration drops the collection and all its data;
 use only after a separate rollback decision and backup.
 

@@ -1,7 +1,8 @@
 # Cortisol MCP server (HTTP)
 
-Streamable HTTP MCP for **org knowledge**. Tool schemas are real; knowledge
-backends are **mocks** until the Go knowledge API is wired.
+Streamable HTTP MCP for **org knowledge**. Tool schemas are real; set
+`MCP_BACKEND=http` to call the Go knowledge API (Atlas vector search).
+`MCP_BACKEND=mock` keeps the in-memory fixture store for offline use.
 
 **Slack is not implemented here.** Agents use Slack’s official MCP
 (`https://mcp.slack.com/mcp`) beside this server — see
@@ -37,10 +38,13 @@ Env:
 | Variable | Default | Notes |
 |----------|---------|--------|
 | `MCP_HTTP_ADDR` | `:3100` | `host:port` or `:port` |
-| `CORTISOL_ORG_ID` | `demo-org` | Scoped onto mock knowledge docs |
-| `MCP_BACKEND` | `mock` | Only `mock` is implemented today |
+| `CORTISOL_ORG_ID` | `demo-org` | Scoped onto knowledge search/post |
+| `MCP_BACKEND` | `mock` | `mock` or `http` |
+| `CORTISOL_API_BASE` | `http://127.0.0.1:8080` | Used when `MCP_BACKEND=http` |
 
-Smoke with the agent: ask it to call `quack`. Or:
+With `MCP_BACKEND=http`, tools hit `GET/POST /api/v1/knowledge` on the Go API
+(`knowledge_documents` + Atlas voyage-code-4 autoEmbed).
+
 
 ```bash
 curl -sS -X POST http://127.0.0.1:3100/mcp \

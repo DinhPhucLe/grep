@@ -1,7 +1,6 @@
 package main
 
 import (
-	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,9 +9,6 @@ import (
 )
 
 func (m *model) headerRows() int {
-	if m.height >= 12 {
-		return 1
-	}
 	return 0
 }
 func (m *model) borderRows() int {
@@ -63,7 +59,8 @@ func (m *model) resize() {
 	if m.statusText() != "" {
 		statusRows = 1
 	}
-	room := m.height - m.headerRows() - m.borderRows() - m.footerRows() - statusRows - 1
+	knowledgeChrome := m.knowledgePanelHeight() + m.knowledgePreviewHeight() + m.knowledgeOverlayHeight() + m.knowledgeLinksLineHeight()
+	room := m.height - m.headerRows() - m.borderRows() - m.footerRows() - statusRows - knowledgeChrome - 1
 	m.draft.SetHeight(max(1, min(lines, 6, max(1, m.height/4), room)))
 	m.viewport.Width = m.width
 	m.viewport.Height = max(0, m.height-m.headerRows()-lipgloss.Height(m.bottom()))
@@ -71,6 +68,7 @@ func (m *model) resize() {
 		m.viewport.GotoBottom()
 	}
 }
+
 func (m *model) footer() string {
 	if m.quitMode {
 		return m.shortcutStyle("Command: " + m.quitDraft + " · Enter run · Esc cancel")
@@ -81,34 +79,52 @@ func (m *model) footer() string {
 	if m.selection.selected {
 		return m.shortcutStyle("Ctrl+C copy · Esc clear · /quit exit")
 	}
-	text := "Wheel/PgUp/PgDn scroll · Enter send · F1 help"
 	if m.quizActive() {
-		text = "Enter answer/continue · Ctrl+O open source · /reveal end quiz · F1 help"
-	}
-	if m.focus != -1 {
-		text = "↑↓ scroll · End latest · Tab focus · F1 help"
+		return m.shortcutStyle("Enter answer/continue · Ctrl+O open source · /reveal end quiz · F1 help")
 	}
 	if len(m.requests) > 0 {
-		text = "↑↓ choose · Enter confirm · ←→ pan · F1 help"
-	}
-	if m.width < 55 {
-		text = "Enter send · F1 help"
-		if m.focus != -1 {
-			text = "↑↓ scroll · F1 help"
-		}
-		if len(m.requests) > 0 {
+		text := "↑↓ choose · Enter confirm · ←→ pan · F1 help"
+		if m.width < 55 {
 			text = "Enter OK · F1 help"
 		}
+		if m.width < 24 {
+			text = "Enter · F1 help"
+		}
+		return m.shortcutStyle(text)
 	}
-	if m.width < 24 {
-		text = "Enter · F1 help"
+	if m.knowledgePreviewIdx >= 0 {
+		return m.shortcutStyle("↑↓ scroll · Esc close · F1 help")
 	}
-	return m.shortcutStyle(text)
+	if m.knowledgeLinksOverlay {
+		return m.shortcutStyle("↑↓ scroll · Esc close · F1 help")
+	}
+	if m.focus == knowledgeFocusToggle && len(m.knowledgeHits) > 0 {
+		if m.knowledgeExpanded {
+			return m.shortcutStyle("Enter hide · F1 help")
+		}
+		return m.shortcutStyle("Enter expand · F1 help")
+	}
+	if m.focus == knowledgeFocusResults && m.knowledgeExpanded {
+		return m.shortcutStyle("Space view · Enter use · Esc · F1 help")
+	}
+	return m.subtleHint("F1 help")
 }
 func (m *model) bottom() string {
 	var parts []string
 	if s := m.statusText(); s != "" {
 		parts = append(parts, s)
+	}
+	if h := m.knowledgePanelHeight(); h > 0 {
+		parts = append(parts, m.knowledgeResultsView(m.width, h))
+	}
+	if h := m.knowledgePreviewHeight(); h > 0 {
+		parts = append(parts, m.knowledgePreviewView(m.width, h))
+	}
+	if h := m.knowledgeOverlayHeight(); h > 0 {
+		parts = append(parts, m.knowledgeOverlayView(m.width, h))
+	}
+	if m.knowledgeLinksLineHeight() > 0 {
+		parts = append(parts, m.knowledgeLinksLineView(m.width))
 	}
 
 	input := m.draft.View()
@@ -132,24 +148,12 @@ func (m *model) bottom() string {
 	}
 	return strings.Join(parts, "\n")
 }
+
 func (m *model) View() string {
 	if m.showHelp {
 		return m.helpView()
 	}
 	var parts []string
-	if m.headerRows() > 0 {
-		state := "connecting"
-		if m.connected {
-			state = "connected"
-		} else if m.connectionLost {
-			state = "offline"
-		}
-		header := "Cortisol · " + filepath.Base(m.workspace) + " · " + state
-		if m.width < 45 {
-			header = "Cortisol · " + state
-		}
-		parts = append(parts, m.accent(ansi.Truncate(header, m.width, ""), "13"))
-	}
 	if m.viewport.Height > 0 {
 		parts = append(parts, m.conversationView())
 	}
@@ -157,6 +161,13 @@ func (m *model) View() string {
 	if len(m.requests) > 0 {
 		r := m.requests[0]
 		r.barY = m.headerRows() + m.viewport.Height + r.barRow
+		// status + knowledge chrome sit above the input border
+		chrome := 0
+		if m.statusText() != "" {
+			chrome++
+		}
+		chrome += m.knowledgePanelHeight() + m.knowledgePreviewHeight() + m.knowledgeOverlayHeight() + m.knowledgeLinksLineHeight()
+		r.barY += chrome
 		if m.borderRows() > 0 {
 			r.barY++
 		}

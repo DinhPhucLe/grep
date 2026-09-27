@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type uiOptions struct {
@@ -69,6 +70,22 @@ type model struct {
 	openSource                                func(context.Context, string, int) error
 	quizJump                                  bool
 	evaluationContext                         []evaluation.Message
+	knowledgeSearching                        bool
+	knowledgeSearchGen                        int
+	knowledgeHits                             []knowledgeHit
+	knowledgeSelected                         int
+	knowledgeOffset                           int
+	knowledgePingLeft                         int
+	knowledgeHighlightLeft                    int
+	knowledgeConnected                        map[string]knowledgeHit
+	knowledgeConnectedOrder                   []string
+	knowledgeLinksOverlay                     bool
+	knowledgeLinksOffset                      int
+	knowledgePanelOpen                        bool
+	knowledgeSearchFailed                     bool
+	knowledgeExpanded                         bool
+	knowledgePreviewIdx                       int
+	knowledgePreviewOffset                    int
 }
 type frameMsg time.Time
 type terminalSizeMsg struct{ width, height int }
@@ -87,12 +104,15 @@ func newModel(c *appServer, cwd string, o uiOptions) *model {
 	d.Prompt = ""
 	d.CharLimit = 0
 	d.Placeholder = "Ask Codex..."
+	// Default CursorLine paints a solid black/white bar behind the placeholder.
+	d.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	d.BlurredStyle.CursorLine = lipgloss.NewStyle()
 	d.Focus()
 	d.SetHeight(1)
 	if o.ReducedMotion {
 		d.Cursor.SetMode(cursor.CursorStatic)
 	}
-	m := &model{client: c, ctx: context.Background(), opts: o, workspace: cwd, status: "Connecting", width: 80, height: 24, draft: d, viewport: viewport.New(80, 16), follow: true, focus: -1, byID: map[string]*conversationItem{}, seenRequests: map[string]bool{}, grader: gradeWithCodex}
+	m := &model{client: c, ctx: context.Background(), opts: o, workspace: cwd, status: "Connecting", width: 80, height: 24, draft: d, viewport: viewport.New(80, 16), follow: true, focus: -1, byID: map[string]*conversationItem{}, seenRequests: map[string]bool{}, grader: gradeWithCodex, knowledgePreviewIdx: -1}
 	m.clipboard = systemClipboard{}
 	m.openSource = openVSCodeSource
 	m.resize()
@@ -258,6 +278,7 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case frameMsg:
 		m.frame++
+		m.tickKnowledgeEffects()
 		if m.busy && !m.opts.ReducedMotion && m.frame%15 == 0 {
 			m.dirty = true
 		}
@@ -280,6 +301,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if len(m.requests) > 0 {
 			m.requestMouse(v)
+			return m, nil
+		}
+		if m.knowledgeMouse(v) {
 			return m, nil
 		}
 		if m.selectionMouse(v) {
@@ -337,6 +361,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.helpKey(v)
 			return m, nil
 		}
+		if m.knowledgeKey(v) {
+			return m, nil
+		}
 		if v.String() == "f1" {
 			m.showHelp = true
 			m.helpOffset = 0
@@ -383,6 +410,17 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "tab", "shift+tab":
 			controls := []int{-1, -2} // composer, history, then activity cards
+			if m.knowledgeResultsVisible() && !m.knowledgeSearching {
+				if len(m.knowledgeHits) > 0 {
+					controls = append(controls, knowledgeFocusToggle)
+				}
+				if m.knowledgeExpanded && len(m.knowledgeHits) > 0 {
+					controls = append(controls, knowledgeFocusResults)
+				}
+			}
+			if m.knowledgeLinkCount() > 0 {
+				controls = append(controls, knowledgeFocusLinks)
+			}
 			for n, i := range m.items {
 				if i.kind == "fileChange" || i.kind == "evaluation" {
 					controls = append(controls, n)
@@ -417,6 +455,17 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case "esc":
+			if m.knowledgePreviewIdx >= 0 {
+				m.closeKnowledgePreview()
+				m.focus = knowledgeFocusResults
+				m.draft.Blur()
+				m.resize()
+				return m, nil
+			}
+			if m.knowledgeLinksOverlay {
+				m.closeKnowledgeLinksOverlay()
+				return m, nil
+			}
 			if m.quizActive() && m.quiz.phase != "running" {
 				return m, nil
 			}
@@ -542,10 +591,12 @@ func (m *model) reduce(msg wireMessage) {
 	var p struct {
 		ThreadID, TurnID, ItemID, Delta string
 		Item                            struct {
-			ID, Type, Text, Status, Command string
-			AggregatedOutput                *string
-			ExitCode                        *int
-			Changes                         json.RawMessage
+			ID, Type, Text, Status, Command, Server, Tool string
+			AggregatedOutput                             *string
+			ExitCode                                     *int
+			Changes                                      json.RawMessage
+			Result                                       json.RawMessage
+			Arguments                                    json.RawMessage
 		}
 		Turn struct {
 			ID, Status string
@@ -580,6 +631,23 @@ func (m *model) reduce(msg wireMessage) {
 		i := m.item(p.TurnID, p.ItemID, strings.Split(msg.Method, "/")[1])
 		i.output += p.Delta
 	case "item/started", "item/completed":
+		if p.Item.Type == "mcpToolCall" {
+			var envelope struct {
+				Item json.RawMessage `json:"item"`
+			}
+			raw := envelope.Item
+			if json.Unmarshal(msg.Params, &envelope) == nil && len(envelope.Item) > 0 {
+				raw = envelope.Item
+			} else {
+				raw, _ = json.Marshal(p.Item)
+			}
+			m.handleMcpToolCall(msg.Method, raw)
+			m.dirty = true
+			if !m.follow {
+				m.newOutput = true
+			}
+			return
+		}
 		if p.Item.Type != "agentMessage" && p.Item.Type != "commandExecution" && p.Item.Type != "fileChange" {
 			return
 		}

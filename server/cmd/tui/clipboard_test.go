@@ -50,7 +50,7 @@ func TestCopySelectionDoesNotQuit(t *testing.T) {
 	m.items = []*conversationItem{{kind: "userMessage", raw: "Hello 👤 world", done: true}}
 	m.refresh()
 	m.View()
-	y := m.headerRows() + 1 // role label followed by message
+	y := m.headerRows() + 1 // padded user message body
 	m.Update(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 0, Y: y})
 	m.Update(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion, X: 7, Y: y})
 	m.Update(tea.MouseMsg{Action: tea.MouseActionRelease, X: 7, Y: y})
