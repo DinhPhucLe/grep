@@ -21,6 +21,9 @@ func testQuizModel(t *testing.T, server string) *model {
 	t.Helper()
 	m := newModel(nil, t.TempDir(), uiOptions{EvaluationServer: server, NoColor: true, ReducedMotion: true})
 	m.openSource = func(context.Context, string, int) error { return nil }
+	m.grader = func(context.Context, string, quiz.Question, []quiz.File, string) (answerGrade, error) {
+		return answerGrade{Accuracy: 1}, nil
+	}
 	m.connected = true
 	m.threadID = "thread"
 	m.busy = true
@@ -39,7 +42,7 @@ func twoQuestions() quiz.Result {
 	}}
 }
 
-func TestQuizReviewsVisibleImplementationWithoutGrading(t *testing.T) {
+func TestQuizReviewsVisibleImplementationAndGradesWithoutDumpingSource(t *testing.T) {
 	generationCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -97,11 +100,12 @@ func TestQuizReviewsVisibleImplementationWithoutGrading(t *testing.T) {
 		t.Helper()
 		m.draft.SetValue("my answer")
 		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-		if cmd != nil {
-			t.Fatal("answer triggered external work")
+		if cmd == nil {
+			t.Fatal("answer did not start grading")
 		}
+		m.Update(cmd())
 	}
-	answer() // Answers are recorded locally, with no correctness judgment.
+	answer()
 	if strings.Contains(m.quiz.panel.raw, "SECRET_TWO") {
 		t.Fatal("answer panel dumped source")
 	}

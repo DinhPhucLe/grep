@@ -63,7 +63,9 @@ Answers are submitted individually by the TUI. Each question opens
 its source reference in VS Code; Ctrl+O cycles additional references. Enter records
 the answer only after MongoDB acknowledges it; Enter again advances. Nothing is
 submitted for grading. Future grading is predefined as individual per question,
-not a client decision. No grading API, batch submission, worker queue, or score exists.
+not a client decision. The TUI grades each answer with an isolated Codex CLI
+run after submission and displays a 0–1 accuracy score. No grading API, batch
+submission, worker queue, or persisted score exists.
 
 Identified generation returns `quiz_id`. The server holds at most 128 unanswered
 quiz snapshots for 24 hours. `POST /quiz-answers` accepts only `user_id`,

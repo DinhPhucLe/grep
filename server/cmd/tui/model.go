@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"cortisol-server/internal/evaluation"
+	"cortisol-server/internal/quiz"
 	"cortisol-server/internal/timing"
 	"encoding/json"
 	"fmt"
@@ -64,6 +65,7 @@ type model struct {
 	cancelEvaluation                          context.CancelFunc
 	lastEvaluation                            *promptEvaluation
 	quiz                                      *quizSession
+	grader                                    func(context.Context, string, quiz.Question, []quiz.File, string) (answerGrade, error)
 	openSource                                func(context.Context, string, int) error
 	quizJump                                  bool
 	evaluationContext                         []evaluation.Message
@@ -90,7 +92,7 @@ func newModel(c *appServer, cwd string, o uiOptions) *model {
 	if o.ReducedMotion {
 		d.Cursor.SetMode(cursor.CursorStatic)
 	}
-	m := &model{client: c, ctx: context.Background(), opts: o, workspace: cwd, status: "Connecting", width: 80, height: 24, draft: d, viewport: viewport.New(80, 16), follow: true, focus: -1, byID: map[string]*conversationItem{}, seenRequests: map[string]bool{}}
+	m := &model{client: c, ctx: context.Background(), opts: o, workspace: cwd, status: "Connecting", width: 80, height: 24, draft: d, viewport: viewport.New(80, 16), follow: true, focus: -1, byID: map[string]*conversationItem{}, seenRequests: map[string]bool{}, grader: gradeWithCodex}
 	m.clipboard = systemClipboard{}
 	m.openSource = openVSCodeSource
 	m.resize()
@@ -139,7 +141,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
-	case quizPreparedMsg, quizGeneratedMsg, quizAnswerSavedMsg:
+	case quizPreparedMsg, quizGeneratedMsg, quizAnswerSavedMsg, quizAnswerGradedMsg:
 		return m, m.handleQuizMessage(v)
 	case quizSourceOpenedMsg:
 		return m, m.handleQuizSourceOpened(v)

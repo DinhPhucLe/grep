@@ -65,9 +65,7 @@ func TestQuizOpensSourceOncePerQuestionAndCyclesReferences(t *testing.T) {
 	}
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
 	runEditor(cmd)
-	if cmd := m.quizEnter("my answer"); cmd != nil {
-		t.Fatal("answer launched external work")
-	}
+	m.Update(m.quizEnter("my answer")())
 	runEditor(m.quizEnter(""))
 	if strings.Join(opened, ",") != "main.go,file with spaces.go,main.go,main.go" {
 		t.Fatalf("wrong editor targets: %v", opened)
@@ -91,7 +89,7 @@ func TestEditorFailureKeepsQuizUsableAndIgnoresStaleReplies(t *testing.T) {
 	if !m.quizActive() || !strings.Contains(m.quiz.panel.raw, "editor unavailable") {
 		t.Fatal("launch error blocked quiz or was hidden")
 	}
-	m.quizEnter("record this answer")
+	m.Update(m.quizEnter("record this answer")())
 	if !strings.Contains(m.quiz.panel.raw, "record this answer") {
 		t.Fatal("could not answer after editor failure")
 	}
@@ -143,7 +141,7 @@ func TestQuizCancelsObsoleteEditorLaunches(t *testing.T) {
 	done := make(chan tea.Msg, 1)
 	go func() { done <- first() }()
 	<-started
-	m.quizEnter("answer")
+	m.Update(m.quizEnter("answer")())
 	next := m.quizEnter("")
 	select {
 	case msg := <-done:

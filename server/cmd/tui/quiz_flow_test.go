@@ -87,8 +87,10 @@ func TestGeneratedQuizRendersAndAnswersFinishWithoutRequests(t *testing.T) {
 		if followup != nil || m.quiz.index != i {
 			t.Fatal("late response restarted quiz")
 		}
-		if cmd := m.quizEnter("my answer"); cmd != nil {
-			t.Fatal("answer scheduled a grading request")
+		if cmd := m.quizEnter("my answer"); cmd == nil {
+			t.Fatal("answer did not start grading")
+		} else {
+			m.Update(cmd())
 		}
 		if m.quiz.phase != "reveal" {
 			t.Fatal("local answer failed to reveal")

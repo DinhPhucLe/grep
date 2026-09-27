@@ -55,8 +55,12 @@ func TestAnswerSaveFailureRetainsDraftAndRetryIsIndividual(t *testing.T) {
 		t.Fatal("failed save lost draft or claimed success")
 	}
 	save = m.quizEnter("my answer")
-	m.Update(save())
-	if m.quiz.phase != "reveal" || m.quiz.index != 0 || m.draft.Value() != "" || !strings.Contains(m.quiz.panel.raw, "Saved") {
+	_, grade := m.Update(save())
+	if grade == nil || m.quiz.phase != "grading" {
+		t.Fatal("saved answer did not start grading")
+	}
+	m.Update(grade())
+	if m.quiz.phase != "reveal" || m.quiz.index != 0 || m.draft.Value() != "" || !strings.Contains(m.quiz.panel.raw, "Answer saved") {
 		t.Fatal("save acknowledgment did not open continuation")
 	}
 	if calls != 2 {

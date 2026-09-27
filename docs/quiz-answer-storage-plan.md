@@ -1,8 +1,8 @@
 # Quiz answer storage and Codex scoring
 
-Status: individual ungraded answer storage uses existing users and projects in source.
-Migration files are prepared for review; applying migrations requires explicit approval.
-Codex grading and embeddings remain planning only.
+Status: individual ungraded answer storage uses existing users and projects.
+Migrations 7 and 8 were applied with approval; any future migration requires explicit approval.
+Codex grades answers in the TUI; grade persistence and embeddings remain planning only.
 
 ## Current implementation
 
@@ -14,7 +14,7 @@ Codex grading and embeddings remain planning only.
   generation and answer submission. IDs identify records; they are not credentials.
 - With a selection, the TUI saves each answer via `/quiz-answers` before advancing.
   Failed saves preserve the draft; identical retries return the existing answer.
-  Without a selection, chat and quizzes work and answers are labeled local only.
+  Without a selection, chat and quizzes work and answers are labeled local only; Codex still grades them.
 - The server retains at most 128 quiz snapshots for 24 hours. Saved answers embed
   the authoritative question and source snapshot. Unanswered quizzes do not survive
   a server restart, but saved answers remain retryable after restart.
@@ -29,22 +29,22 @@ Codex grading and embeddings remain planning only.
 - No runtime code creates collections, indexes, users, or projects. No migration
   is executed without explicit approval. Missing answer schema blocks saves,
   not ordinary evaluation/chat.
-- There is no grading, embedding generation, or public answer-history endpoint yet.
+- Codex grading displays accuracy and corrections in the TUI. Grades are not saved in `quiz_answers`; embedding generation and public answer-history endpoints are not implemented.
 
-## Proposed second slice: grade individually with Codex
+## Individual Codex grading now implemented
 
-Use Codex app-server for grading, separate from Snowflake's prompt evaluation and quiz generation. Each submission supplies the exact question, relevant implementation snapshot, expected key points derived from that evidence, and the user's answer to a dedicated grading thread. Keep it separate from the active coding conversation so grading cannot start implementation work or confuse turn state.
+After each answer is saved (or accepted locally without a selected user), the TUI
+runs `codex exec` in an ephemeral, read-only scratch directory. The prompt contains
+one question, the answer, and numbered excerpts from the quiz's source snapshot.
+The grading run is separate from the implementation conversation and does not use
+Snowflake. Its JSON result contains an accuracy score from 0 to 1 and a brief
+explanation when the answer is wrong or partly right. Perfect answers show only
+the score. Malformed output, missing evidence, timeout, and process errors show
+“Accuracy unavailable” without inventing a zero; the user can continue.
 
-The installed Codex protocol exposes `thread/start` with developer instructions and `turn/start.outputSchema` for structured final output. A planning-time schema inspection confirmed these fields. Before implementation, validate the installed client's thread lifecycle and tool restrictions in a small isolated probe. Require a read-only, no-edit review; disable execution/tools where supported and never grant elevated access just to grade. Treat source comments and user answers as evidence, never grader instructions.
-
-Proposed rubric, to agree and calibrate on human-scored examples:
-
-- Accuracy: 0–1 for factual correctness against the exact implementation, allowing semantic paraphrases.
-- Completeness: 0–1 for the proportion of required points covered; extra words do not earn credit and unasked details are not required.
-- Overall: proposed `0.7 * accuracy + 0.3 * completeness`, rounded to two decimals. This measures answer quality, not a probability that the user understands the code. Define how material contradictions affect both components before shipping.
-- Anchors: 0 = incorrect/no relevant understanding; about 0.5 = partly right with significant omissions; 1 = correct and covers every required point.
-
-Request a structured object containing component scores, covered/missing points, and a short reason; calculate the final number in application code so the formula is consistent. Validate finite numeric values within [0,1]. Inadequate evidence, refusal, timeout, and malformed output produce a failed/ungraded state with no score, never a zero. Record model/rubric versions and preserve the answer for a later explicit re-evaluation. Do not mix grades from changed rubrics without identifying their version.
+The grade is display-only for now. The existing answer record remains `ungraded`
+because migration 8 introduced no grade fields. Persisted grading, calibration,
+and embeddings would need a separate design and explicitly approved migration.
 
 ## Proposed third slice: find areas needing practice
 
@@ -59,7 +59,7 @@ Keep user/project boundaries when retrieving history. Choose the embedding provi
 1. Agree on identity, source-context retention, one-answer policy, and score weights.
 2. Prepare the collection validator and indexes for review. Get explicit approval before applying any database migration.
 3. Implement durable individual answer saves and retrieval; check duplicate submissions, invalid quiz references, restart behavior, and storage failures.
-4. Add the isolated Codex grader; calibrate with correct, incomplete, contradictory, and irrelevant answers. Check that failure preserves the answer and cannot mutate the workspace or coding conversation.
+4. Calibrate the isolated Codex grader against human-scored examples, then design grade persistence separately.
 5. Add ordinary topic history, then evaluate whether embeddings improve retrieval enough to justify the additional pipeline.
 
-Storage against existing users is authorized by the user. Applying the prepared migration still requires explicit approval. Scoring and embeddings are not implemented or authorized by this plan alone.
+Storage against existing users is authorized by the user. Display-only scoring is implemented; persisted grades and embeddings remain future work.

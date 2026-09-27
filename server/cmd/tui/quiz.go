@@ -23,7 +23,7 @@ type quizSession struct {
 	result            quiz.Result
 	baseline          fileSnapshot
 	turnID            string
-	phase             string // preparing, running, generating, awaiting_reply, question, saving, reveal, done
+	phase             string // preparing, running, generating, awaiting_reply, question, saving, grading, reveal, done
 	quizID            string
 	index             int
 	sourceIndex       int
@@ -52,6 +52,15 @@ type quizAnswerSavedMsg struct {
 	session *quizSession
 	index   int
 	answer  string
+	err     error
+}
+
+type quizAnswerGradedMsg struct {
+	session *quizSession
+	index   int
+	answer  string
+	saved   bool
+	grade   answerGrade
 	err     error
 }
 
@@ -267,11 +276,48 @@ func (m *model) handleQuizMessage(msg tea.Msg) tea.Cmd {
 		if strings.TrimSpace(m.draft.Value()) == v.answer {
 			m.draft.Reset()
 		}
+		return m.startAnswerGrading(v.answer, true)
+	case quizAnswerGradedMsg:
+		if m.quiz != v.session || v.session.phase != "grading" || v.session.index != v.index {
+			return nil
+		}
+		q := m.quiz
+		m.busy = false
 		q.phase = "reveal"
-		m.showQuizQuestion("Your answer: " + v.answer + "\nSaved without grading. Press Enter to continue.")
+		where := "Shown locally only; answer not saved."
+		if v.saved {
+			where = "Answer saved."
+		}
+		feedback := "Your answer: " + v.answer + "\n" + where + "\n"
+		if v.err != nil {
+			feedback += "Accuracy unavailable: Codex could not evaluate this answer."
+		} else {
+			feedback += fmt.Sprintf("Accuracy: %.2f", v.grade.Accuracy)
+			if v.grade.Accuracy < 1 {
+				feedback += "\n" + v.grade.Explanation
+			}
+		}
+		feedback += "\nPress Enter to continue."
+		m.showQuizQuestion(feedback)
 
 	}
 	return nil
+}
+
+func (m *model) startAnswerGrading(answer string, saved bool) tea.Cmd {
+	q := m.quiz
+	q.phase = "grading"
+	m.busy = true
+	m.showQuizQuestion("Evaluating your answer with Codex…")
+	m.status = "Evaluating answer…"
+	ctx, cancel := context.WithTimeout(m.traceContext(), 90*time.Second)
+	q.cancel = cancel
+	index, workspace, question, files, grader := q.index, m.workspace, q.result.Questions[q.index], q.request.Files, m.grader
+	return func() tea.Msg {
+		defer cancel()
+		grade, err := grader(ctx, workspace, question, files, answer)
+		return quizAnswerGradedMsg{session: q, index: index, answer: answer, saved: saved, grade: grade, err: err}
+	}
 }
 
 func (m *model) quizFailure(err error) {
@@ -305,7 +351,7 @@ func (m *model) showQuizQuestion(feedback string) {
 	question := q.result.Questions[q.index]
 	var b strings.Builder
 	fmt.Fprintf(&b, "Question %d/%d\n", q.index+1, q.questionCount())
-	b.WriteString("Review the implementation in your editor, then answer. Answers are not graded.\n")
+	b.WriteString("Review the implementation in your editor, then answer. Codex evaluates each answer.\n")
 	fmt.Fprintf(&b, "\n%s\n", question.Question)
 	if feedback != "" {
 		b.WriteString("\n" + feedback + "\n")
@@ -325,7 +371,7 @@ func (m *model) showQuizQuestion(feedback string) {
 	m.status = fmt.Sprintf("Quiz %d/%d — answer in the composer", q.index+1, q.questionCount())
 	m.draft.Placeholder = "Your answer…"
 	if q.phase == "reveal" {
-		m.status = "Answer recorded — Enter for next question"
+		m.status = "Answer evaluated — Enter for next question"
 		m.draft.Placeholder = "Press Enter to continue…"
 	}
 	m.quizFocus()
@@ -333,7 +379,7 @@ func (m *model) showQuizQuestion(feedback string) {
 
 func (m *model) quizEnter(text string) tea.Cmd {
 	q := m.quiz
-	if q.phase == "saving" {
+	if q.phase == "saving" || q.phase == "grading" {
 		return nil
 	}
 	if text == "/reveal" && q.phase != "running" && q.phase != "preparing" {
@@ -346,7 +392,7 @@ func (m *model) quizEnter(text string) tea.Cmd {
 	if q.phase == "reveal" {
 		q.index++
 		if q.index >= q.questionCount() {
-			m.finishQuiz("Review complete. Answers were not graded.")
+			m.finishQuiz("Review complete.")
 		} else {
 			q.phase = "question"
 			q.sourceIndex = 0
@@ -388,9 +434,7 @@ func (m *model) quizEnter(text string) tea.Cmd {
 		}
 	}
 	m.draft.Reset()
-	q.phase = "reveal"
-	m.showQuizQuestion("Your answer: " + text + "\nShown locally only; not saved or graded. Press Enter to continue.")
-	return nil
+	return m.startAnswerGrading(text, false)
 }
 
 func (m *model) finishQuiz(message string) {

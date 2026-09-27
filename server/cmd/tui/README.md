@@ -101,9 +101,10 @@ credentials. The server reads users and projects and checks project ownership;
 it never creates or changes those records. Without a selection, chat and quizzes
 work, with answers explicitly labeled local only, not saved.
 
-Saving requires the separately approved migration 8 (`quiz_answers` and indexes).
-Null-score evaluation persistence requires migration 7. Neither runs on startup
-or during a request. Get explicit approval before applying migrations.
+Saving requires migration 8 (`quiz_answers` and indexes); null-score evaluation
+persistence requires migration 7. These were applied earlier with approval.
+Migrations never run on startup or during a request. Get explicit approval before
+applying any future migration.
 
 Configure the server's Snowflake credentials in `server/.env` for Cortex calls.
 Evaluation includes the original prompt and recent user/assistant conversation
@@ -138,8 +139,9 @@ For an ambiguous implementation request:
    in the quiz panel. Automatically open the first reference at its starting line
    in the existing VS Code window's editor. Ctrl+O cycles through additional
    references (or reopens the source if there is only one).
-5. Enter saves the answer individually to MongoDB without grading; Enter again advances and
-   opens the next question's source. After the last one, return to chat.
+5. Enter saves the answer individually when a user/project is selected, then runs
+   one isolated Codex grade. The terminal shows accuracy from 0 to 1 and an
+   explanation for wrong or partly right answers. Enter then advances.
    `/reveal` ends review early after Codex finishes.
 
 The TUI keeps the answer draft until the server acknowledges the save. A failed
@@ -163,8 +165,12 @@ made after generation can move its referenced lines. No files are rewritten,
 masked, or restored by the quiz. The server drops later questions with overlapping
 evidence to avoid repetitive coverage.
 
-There are no grading requests, correctness feedback, graded answer retries, points, or
-answer batches. Future grading, if added, will be individual per question.
+Grading uses an ephemeral Codex CLI run in a scratch directory with a read-only
+sandbox. It receives only the question, answer, and referenced source excerpts;
+it does not enter the coding conversation. An unavailable or invalid grade shows
+no score and still lets the user continue. Grades are displayed in the TUI only;
+`quiz_answers` keeps the submitted answer with status `ungraded` because its
+schema has no grade fields. There are no batch grading calls or point rewards.
 Generation errors end the quiz with an explanation; no automatic retries occur.
 Drafts are restored afterward. Codex approvals and input requests remain available.
 
