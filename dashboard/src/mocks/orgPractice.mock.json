@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "org_practice.v1",
+  "generatedAt": "2026-09-26T18:00:00Z",
+  "subject": {
+    "organizationId": "660000000000000004010000",
+    "practice": "lead_and_reveal",
+    "from": "2026-01-01T00:00:00Z",
+    "to": "2026-03-31T23:59:59Z"
+  },
+  "codebaseTreemaps": [
+    {
+      "projectId": "660000000000000002010000",
+      "repoName": "cortisol-cli",
+      "status": "available",
+      "root": {
+        "name": "cortisol-cli",
+        "value": 3,
+        "intensity": 4,
+        "children": [
+          {
+            "name": "server",
+            "value": 2,
+            "intensity": 4,
+            "children": [
+              { "name": "server/a.go", "value": 1, "intensity": 2 },
+              { "name": "server/b.go", "value": 1, "intensity": 2 }
+            ]
+          },
+          {
+            "name": "cli",
+            "value": 1,
+            "intensity": 2,
+            "children": [{ "name": "cli/c.go", "value": 1, "intensity": 4 }]
+          }
+        ]
+      }
+    }
+  ],
+  "timeseries": {
+    "status": "available",
+    "points": [
+      {
+        "t": "2026-03-01",
+        "correct": 1,
+        "failedReveal": 1,
+        "medianActiveAnswerTimeMs": 15000
+      },
+      {
+        "t": "2026-03-02",
+        "correct": 1,
+        "failedReveal": 0,
+        "medianActiveAnswerTimeMs": 30000
+      }
+    ]
+  },
+  "metrics": [
+    {
+      "id": "total_instances",
+      "category": "significant",
+      "label": "Practice instances",
+      "status": "available",
+      "display": { "primary": "3" },
+      "visualization": { "type": "stat" }
+    }
+  ],
+  "summary": {
+    "status": "available",
+    "bullets": ["3 lead_and_reveal instances across 1 codebases"]
+  }
+}

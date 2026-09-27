@@ -1,0 +1,154 @@
+[
+  {
+    "create": "organizations",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["_id", "name", "created_at"],
+        "additionalProperties": false,
+        "properties": {
+          "_id": {
+            "bsonType": "objectId",
+            "description": "ORGANIZATION ID: MongoDB ObjectId."
+          },
+          "name": {
+            "bsonType": "string",
+            "description": "ORGANIZATION NAME: Workplace organization display name."
+          },
+          "created_at": {
+            "bsonType": "date",
+            "description": "CREATED AT: Required BSON date supplied by the application."
+          }
+        }
+      }
+    },
+    "validationLevel": "strict",
+    "validationAction": "error"
+  },
+  {
+    "create": "organization_members",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["_id", "organization_id", "user_id", "role", "joined_at"],
+        "additionalProperties": false,
+        "properties": {
+          "_id": {
+            "bsonType": "objectId"
+          },
+          "organization_id": {
+            "bsonType": "objectId",
+            "description": "References organizations._id; existence checked by the application."
+          },
+          "user_id": {
+            "bsonType": "objectId",
+            "description": "References users._id; existence checked by the application."
+          },
+          "role": {
+            "bsonType": "string",
+            "description": "Membership role; allowed values managed by the application."
+          },
+          "joined_at": {
+            "bsonType": "date"
+          }
+        }
+      }
+    },
+    "validationLevel": "strict",
+    "validationAction": "error"
+  },
+  {
+    "createIndexes": "organization_members",
+    "indexes": [
+      {
+        "key": { "organization_id": 1, "user_id": 1 },
+        "name": "organization_members_unique",
+        "unique": true
+      },
+      {
+        "key": { "organization_id": 1 },
+        "name": "organization_members_by_org"
+      },
+      {
+        "key": { "user_id": 1 },
+        "name": "organization_members_by_user"
+      }
+    ]
+  },
+  {
+    "create": "practice_events",
+    "validator": {
+      "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+          "_id",
+          "practice",
+          "organization_id",
+          "user_id",
+          "session_id",
+          "project_id",
+          "started_at",
+          "ended_at",
+          "total_duration_ms",
+          "active_answer_time_ms",
+          "attempts",
+          "outcome",
+          "points_delta",
+          "repo_name",
+          "repo_org",
+          "file_path",
+          "module",
+          "start_line",
+          "end_line"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "_id": { "bsonType": "objectId" },
+          "practice": { "bsonType": "string" },
+          "organization_id": { "bsonType": "objectId" },
+          "user_id": { "bsonType": "objectId" },
+          "session_id": { "bsonType": "objectId" },
+          "project_id": { "bsonType": "objectId" },
+          "started_at": { "bsonType": "date" },
+          "ended_at": { "bsonType": "date" },
+          "total_duration_ms": { "bsonType": ["long", "int"] },
+          "active_answer_time_ms": { "bsonType": ["long", "int"] },
+          "attempts": { "bsonType": "int" },
+          "outcome": { "bsonType": "string" },
+          "points_delta": { "bsonType": ["int", "null"] },
+          "repo_name": { "bsonType": "string" },
+          "repo_org": { "bsonType": "string" },
+          "file_path": { "bsonType": "string" },
+          "module": { "bsonType": "string" },
+          "start_line": { "bsonType": "int" },
+          "end_line": { "bsonType": "int" },
+          "answer_quality": { "bsonType": ["string", "null"] },
+          "relevance": { "bsonType": ["string", "null"] }
+        }
+      }
+    },
+    "validationLevel": "strict",
+    "validationAction": "error"
+  },
+  {
+    "createIndexes": "practice_events",
+    "indexes": [
+      {
+        "key": { "organization_id": 1, "practice": 1, "started_at": 1 },
+        "name": "practice_events_by_org_practice_started"
+      },
+      {
+        "key": { "user_id": 1, "practice": 1, "started_at": 1 },
+        "name": "practice_events_by_user_practice_started"
+      },
+      {
+        "key": { "organization_id": 1, "project_id": 1, "practice": 1 },
+        "name": "practice_events_by_org_project_practice"
+      },
+      {
+        "key": { "session_id": 1 },
+        "name": "practice_events_by_session"
+      }
+    ]
+  }
+]

@@ -12,6 +12,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/mongodb"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -114,5 +115,68 @@ func Migrate(config Config, directory string) (uint, error) {
 	if dirty {
 		return version, fmt.Errorf("migration version %d is dirty", version)
 	}
+	names, err := client.Database(config.Database).ListCollectionNames(ctx, bson.D{})
+	if err != nil {
+		return version, fmt.Errorf("list collections after migrate: %w", err)
+	}
+	if missing := MissingCollectionsForVersion(version, names); len(missing) > 0 {
+		return version, SchemaIntegrityError(version, missing)
+	}
 	return version, nil
+}
+
+// ForceDirtyVersion resets a dirty migration only when the requested version is
+// exactly the version immediately before the failed migration. It does not run
+// migrations; callers can run Migrate afterward.
+func ForceDirtyVersion(config Config, directory string, version uint) error {
+	if err := CheckMigrations(directory); err != nil {
+		return err
+	}
+	source, err := iofs.New(os.DirFS(directory), ".")
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(config.URI).
+		SetConnectTimeout(10*time.Second).SetServerSelectionTimeout(10*time.Second).
+		SetTimeout(30*time.Second))
+	if err != nil {
+		return errors.New("cannot initialize migration client: check MongoDB configuration")
+	}
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		_ = client.Disconnect(cleanupCtx)
+	}()
+	if err := client.Ping(ctx, nil); err != nil {
+		return fmt.Errorf("connect to MongoDB for migrations: %w", err)
+	}
+	driver, err := mongodb.WithInstance(client, &mongodb.Config{
+		DatabaseName: config.Database,
+		Locking:      mongodb.Locking{Enabled: true},
+	})
+	if err != nil {
+		return fmt.Errorf("initialize migration tracking: %w", err)
+	}
+	runner, err := migrate.NewWithInstance("iofs", source, "mongodb", driver)
+	if err != nil {
+		return err
+	}
+	current, dirty, err := runner.Version()
+	if err != nil {
+		return err
+	}
+	if !dirty {
+		return fmt.Errorf("refusing to force migration version: database version %d is not dirty", current)
+	}
+	if version >= uint(current) || uint(current)-version != 1 {
+		return fmt.Errorf("refusing to force migration version %d: dirty database version is %d; only the immediately preceding version can be selected", version, current)
+	}
+	if err := runner.Force(int(version)); err != nil {
+		return fmt.Errorf("force migration version %d: %w", version, err)
+	}
+	return nil
 }
