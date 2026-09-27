@@ -1,7 +1,6 @@
 import { Paper, Text, Title } from '@mantine/core';
 import type { ActivityCalendar } from '../../contracts/practice';
-
-const COLORS = ['#d0d0d0', '#ffc9c9', '#ff8f8f', '#ff4e4e', '#b01010'];
+import { practiceIntensityColor } from '../../utils/practiceIntensity';
 
 export function ActivityCalendarHeatmap({
   calendar,
@@ -37,7 +36,7 @@ export function ActivityCalendarHeatmap({
             className="practice-calendar-cell"
             title={`${cell.date}: ${cell.count}`}
             data-intensity={cell.intensity}
-            style={{ background: COLORS[cell.intensity] ?? COLORS[0] }}
+            style={{ background: practiceIntensityColor(cell.intensity) }}
           />
         ))}
       </div>

@@ -1,9 +1,18 @@
 import { Container, Group, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { dashboardLayout } from '../../config/layout';
 import type { EmployeePracticeView } from '../../contracts/practice';
+import { truncateId } from '../../utils/formatPractice';
 import { MetricRenderer } from '../metrics/MetricRenderer';
 import { ActivityCalendarHeatmap } from './ActivityCalendarHeatmap';
 import { OutcomePieCard } from './OutcomePieCard';
+
+function employeeSubtitle(view: EmployeePracticeView): string {
+  const { userName, userId, year } = view.subject;
+  if (userName) {
+    return `${userName} · Year ${year}`;
+  }
+  return `User ${truncateId(userId)} · Year ${year}`;
+}
 
 export function EmployeePracticePage({ view }: { view: EmployeePracticeView }) {
   return (
@@ -19,9 +28,7 @@ export function EmployeePracticePage({ view }: { view: EmployeePracticeView }) {
           <Title order={1} className="section-title">
             {view.subject.practice}
           </Title>
-          <Text className="secondary-text">
-            User {view.subject.userId} · Year {view.subject.year}
-          </Text>
+          <Text className="secondary-text">{employeeSubtitle(view)}</Text>
         </div>
 
         <ActivityCalendarHeatmap calendar={view.activityCalendar} year={view.subject.year} />

@@ -1,15 +1,21 @@
 import { Paper, Text, Title } from '@mantine/core';
 import type { CodebaseTreemap, TreemapNode } from '../../contracts/practice';
-
-const COLORS = ['#d0d0d0', '#ffc9c9', '#ff8f8f', '#ff4e4e', '#b01010'];
+import { practiceIntensityColor } from '../../utils/practiceIntensity';
 
 function NodeBox({ node, depth }: { node: TreemapNode; depth: number }) {
   const children = node.children ?? [];
+  const isLeaf = children.length === 0;
+  const background = isLeaf
+    ? practiceIntensityColor(node.intensity)
+    : depth === 0
+      ? '#ffffff'
+      : '#f7f7f7';
+
   return (
     <div
       className="treemap-node"
       style={{
-        background: COLORS[node.intensity] ?? COLORS[0],
+        background,
         flex: Math.max(node.value, 1),
         minHeight: depth === 0 ? 160 : 48,
       }}
