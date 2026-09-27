@@ -100,7 +100,11 @@ func (m *model) startQuizGeneration() tea.Cmd {
 		timing.Record(ctx, "workspace.collect", started, err, map[string]int{"files": len(files), "code_bytes": size})
 		request.Files = files
 		if err == nil && len(files) == 0 {
-			err = fmt.Errorf("no generated text files available for a grounded quiz")
+			// A successful Codex turn may only ask a clarification question.
+			// There is no implementation to quiz; release the conversation instead.
+			return quizGeneratedMsg{session: q, request: request, result: quiz.Result{
+				Questions: []quiz.Question{}, NoQuestionsReason: "No generated text files to quiz.",
+			}}
 		}
 		if err == nil {
 			err = request.Validate()
@@ -189,7 +193,12 @@ func (m *model) handleQuizMessage(msg tea.Msg) tea.Cmd {
 		q.request = v.request
 		q.result = v.result
 		if len(q.result.Questions) == 0 {
-			m.finishQuiz("No grounded quiz questions were available. Code review is open.")
+			if len(q.request.Files) == 0 {
+				timing.Record(m.traceContext(), "quiz.skipped_no_files", q.generationStarted, nil, map[string]int{"files": 0})
+				m.finishQuiz("No generated text files to quiz. Continue the conversation below.")
+			} else {
+				m.finishQuiz("No grounded quiz questions were available. Code review is open.")
+			}
 			return nil
 		}
 		q.phase = "question"

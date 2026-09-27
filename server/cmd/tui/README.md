@@ -103,7 +103,10 @@ prompt to Codex. Clear prompts display normally. Ambiguous prompts use the
 following review flow:
 
 1. Hold the turn's assistant text and raw file-change cards while Codex runs.
-2. After a successful turn, collect generated text files and call `/quizzes`.
+2. After a successful turn, collect generated text files. If collection succeeds
+   with no files, show Codex's response, restore the draft, and return to normal
+   chat without calling the quiz API. This includes clarification-only turns.
+   Otherwise call `/quizzes`.
    The server plans up to six independent code scopes, then generates one question
    per scope through a shared three-worker queue with six waiting slots.
 3. Once the complete batch arrives, display numbered file snapshots with only
@@ -136,7 +139,9 @@ so shell edits in tracked or untracked nonignored files are included without
 counting unchanged preexisting dirty files. Non-Git workspaces rely on file-change
 events; shell-only edits there cannot be reliably captured. Binary/oversized files,
 deletions, and external concurrent edits are not a complete change-review system.
-When no usable generated files exist, the TUI offers retry or explicit reveal.
+Successful collection with no eligible files skips the quiz without awarding
+credit. File-collection errors still offer retry or explicit reveal. Code shown
+only in chat is not currently used as quiz evidence.
 Run the TUI from the intended workspace. Reads are restricted to that workspace,
 including symlink resolution.
 

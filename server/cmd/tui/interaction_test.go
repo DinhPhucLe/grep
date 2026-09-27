@@ -5,11 +5,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	tea "github.com/charmbracelet/bubbletea"
 	"io"
 	"strings"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type bufferCloser struct{ bytes.Buffer }

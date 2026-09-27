@@ -88,6 +88,7 @@ ordering across machines, not durations.
 | `codex.turn` | Turn dispatch through completion/failure/disconnect | Tools, tests, model work, and approvals |
 | `codex.user_decision_wait` | Request arrival until user response submitted | Approval/input waiting, included in Codex turn |
 | `workspace.collect` | Post-turn enumeration, hashing, changed-file reads | Second workspace scan; includes file/byte counts |
+| `quiz.skipped_no_files` | Successful collection found no quiz-eligible files | Expected for clarification-only turns; chat resumes without a quiz API call |
 | `http.client` / `quizzes` | Complete quiz API round trip | Scope planning plus concurrent job batch |
 | `ui.question_render` | Build and refresh question viewport | Large display buffers; not terminal paint |
 | `quiz.prepare_to_ready` | Post-Codex collection through question readiness | The wait after coding finishes |
